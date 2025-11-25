@@ -14,6 +14,7 @@
     "dukascopy-node": "^1.45.1",
     "express": "^4.19.2",
     "morgan": "^1.10.0",
+    "node-fetch": "^2.7.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {

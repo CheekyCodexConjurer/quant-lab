@@ -1,0 +1,38 @@
+const defaultSettings = {
+  timezone: 'UTC-3',
+  tickSize: 0.01,
+  basis: 'median',
+  gapQuantization: {
+    enabled: false,
+  },
+};
+
+let currentSettings = { ...defaultSettings };
+
+function getNormalizationSettings() {
+  return currentSettings;
+}
+
+function updateNormalizationSettings(newSettings = {}) {
+  currentSettings = {
+    ...currentSettings,
+    ...newSettings,
+    gapQuantization: {
+      ...currentSettings.gapQuantization,
+      ...(newSettings.gapQuantization || {}),
+    },
+  };
+  return currentSettings;
+}
+
+function describeNormalization() {
+  const { timezone, tickSize, basis, gapQuantization } = currentSettings;
+  const gap = gapQuantization || defaultSettings.gapQuantization;
+  return `Normalization -> tz: ${timezone}, tickSize: ${tickSize}, basis: ${basis}, gapQuantization: ${gap.enabled ? 'on' : 'off'}`;
+}
+
+module.exports = {
+  getNormalizationSettings,
+  updateNormalizationSettings,
+  describeNormalization,
+};

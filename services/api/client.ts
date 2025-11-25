@@ -5,7 +5,7 @@ const headers = {
 };
 
 export const apiClient = {
-  async importDukascopy(payload: { asset: string; timeframe: string; startDate?: string; endDate?: string }) {
+  async importDukascopy(payload: { asset: string; timeframe: string; startDate?: string; endDate?: string; fullHistory?: boolean }) {
     const res = await fetch(`${BASE_URL}/api/import/dukascopy`, {
       method: 'POST',
       headers,
@@ -37,7 +37,14 @@ export const apiClient = {
     return res.json();
   },
 
-  async updateNormalization(payload: { tickSize?: number; timezone?: string; basis?: string }) {
+  async updateNormalization(payload: {
+    tickSize?: number;
+    timezone?: string;
+    basis?: string;
+    gapQuantization?: {
+      enabled?: boolean;
+    };
+  }) {
     const res = await fetch(`${BASE_URL}/api/normalization`, {
       method: 'POST',
       headers,
@@ -56,6 +63,50 @@ export const apiClient = {
   async fetchData(asset: string, timeframe: string) {
     const res = await fetch(`${BASE_URL}/api/data/${asset}/${timeframe}`);
     if (!res.ok) throw new Error('Dataset not available');
+    return res.json();
+  },
+
+  async listIndicators() {
+    const res = await fetch(`${BASE_URL}/api/indicators`);
+    if (!res.ok) throw new Error('Failed to list indicators');
+    return res.json();
+  },
+
+  async getIndicator(id: string) {
+    const res = await fetch(`${BASE_URL}/api/indicators/${id}`);
+    if (!res.ok) throw new Error('Indicator not found');
+    return res.json();
+  },
+
+  async saveIndicator(id: string, payload: { code: string }) {
+    const res = await fetch(`${BASE_URL}/api/indicators/${id}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Failed to save indicator');
+    return res.json();
+  },
+
+  async listStrategies() {
+    const res = await fetch(`${BASE_URL}/api/strategies`);
+    if (!res.ok) throw new Error('Failed to list strategies');
+    return res.json();
+  },
+
+  async getStrategy(id: string) {
+    const res = await fetch(`${BASE_URL}/api/strategies/${id}`);
+    if (!res.ok) throw new Error('Strategy not found');
+    return res.json();
+  },
+
+  async saveStrategy(id: string, payload: { code: string }) {
+    const res = await fetch(`${BASE_URL}/api/strategies/${id}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Failed to save strategy');
     return res.json();
   },
 };

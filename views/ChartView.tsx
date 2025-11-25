@@ -3,7 +3,6 @@ import { ChevronDown, Eye, EyeOff, Star, StarOff, X } from 'lucide-react';
 import { LightweightChart } from '../components/LightweightChart';
 import { AVAILABLE_ASSETS } from '../constants/markets';
 import { TIMEFRAME_LIBRARY } from '../constants/timeframes';
-import { ChartTimezoneSelector } from '../components/chart/ChartTimezoneSelector';
 import { Candle, BacktestResult, CustomIndicator } from '../types';
 
 type ChartViewProps = {
@@ -22,7 +21,7 @@ type ChartViewProps = {
   pinnedTimeframes: string[];
   onPinnedChange: (timeframes: string[]) => void;
   chartTimezone: string;
-  onTimezoneChange: (timezone: string) => void;
+  availableAssets: string[];
 };
 
 export const ChartView: React.FC<ChartViewProps> = ({
@@ -41,7 +40,7 @@ export const ChartView: React.FC<ChartViewProps> = ({
   pinnedTimeframes,
   onPinnedChange,
   chartTimezone,
-  onTimezoneChange,
+  availableAssets,
 }) => {
   const hasVisibleIndicator = indicators.some((indicator) => indicator.isActive && indicator.isVisible);
   const [isMenuOpen, setMenuOpen] = useState(false);
@@ -101,15 +100,22 @@ export const ChartView: React.FC<ChartViewProps> = ({
       <div className="absolute top-4 left-4 z-20 flex gap-2 items-center">
         <div className="relative group">
           <select
-            value={activeSymbol}
+            value={availableAssets.includes(activeSymbol) ? activeSymbol : ''}
             onChange={(event) => onSymbolChange(event.target.value)}
-            className="appearance-none bg-white/90 backdrop-blur border border-slate-200 pl-3 pr-8 py-1.5 text-xs font-mono font-bold text-slate-900 shadow-sm cursor-pointer outline-none hover:border-slate-400 transition-colors uppercase"
+            className="appearance-none bg-white/90 backdrop-blur border border-slate-200 pl-3 pr-8 py-1.5 text-xs font-mono font-bold text-slate-900 shadow-sm cursor-pointer outline-none hover:border-slate-400 transition-colors uppercase disabled:cursor-not-allowed disabled:text-slate-400"
+            disabled={availableAssets.length === 0}
           >
-            {AVAILABLE_ASSETS.map((asset) => (
-              <option key={asset} value={asset}>
-                {asset}
+            {availableAssets.length === 0 ? (
+              <option value="" disabled>
+                No local assets
               </option>
-            ))}
+            ) : (
+              availableAssets.map((asset) => (
+                <option key={asset} value={asset}>
+                  {asset}
+                </option>
+              ))
+            )}
           </select>
           <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500" />
         </div>
@@ -121,11 +127,10 @@ export const ChartView: React.FC<ChartViewProps> = ({
             <button
               key={tf}
               onClick={() => onTimeframeChange(tf)}
-              className={`px-3 py-1.5 text-xs font-mono transition-colors border-r border-slate-100 ${
-                activeTimeframe === tf
-                  ? 'bg-slate-900 text-white font-medium'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-              }`}
+              className={`px-3 py-1.5 text-xs font-mono transition-colors border-r border-slate-100 ${activeTimeframe === tf
+                ? 'bg-slate-900 text-white font-medium'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                }`}
             >
               {tf}
             </button>
@@ -142,9 +147,8 @@ export const ChartView: React.FC<ChartViewProps> = ({
           {isMenuOpen && (
             <div
               ref={menuRef}
-              className={`absolute left-0 w-[260px] bg-white border border-slate-200 rounded-sm shadow-2xl p-3 text-left space-y-3 ${
-                menuPlacement === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
-              }`}
+              className={`absolute left-0 w-[260px] bg-white border border-slate-200 rounded-sm shadow-2xl p-3 text-left space-y-3 ${menuPlacement === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
+                }`}
             >
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Timeframes</div>
               <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1 custom-scrollbar">
@@ -160,14 +164,12 @@ export const ChartView: React.FC<ChartViewProps> = ({
                         return (
                           <div
                             key={option.code}
-                            className={`flex items-center justify-between px-2 py-1.5 text-xs ${
-                              available ? 'text-slate-700' : 'text-slate-400 opacity-70'
-                            }`}
+                            className={`flex items-center justify-between px-2 py-1.5 text-xs ${available ? 'text-slate-700' : 'text-slate-400 opacity-70'
+                              }`}
                           >
                             <button
-                              className={`flex-1 text-left ${
-                                available ? 'hover:text-slate-900' : 'cursor-not-allowed'
-                              } ${activeTimeframe === option.code ? 'font-semibold' : ''}`}
+                              className={`flex-1 text-left ${available ? 'hover:text-slate-900' : 'cursor-not-allowed'
+                                } ${activeTimeframe === option.code ? 'font-semibold' : ''}`}
                               onClick={() => available && onTimeframeChange(option.code)}
                               disabled={!available}
                             >
@@ -216,9 +218,10 @@ export const ChartView: React.FC<ChartViewProps> = ({
           trades={backtestResult?.trades}
           lineData={hasVisibleIndicator ? indicatorData : undefined}
           lineColor="#2962FF"
+          timeframe={activeTimeframe}
           timezone={chartTimezone}
         />
-        <ChartTimezoneSelector timezoneId={chartTimezone} onChange={onTimezoneChange} />
+
       </div>
     </div>
   );

@@ -1,7 +1,17 @@
 import React, { useEffect, useRef } from 'react';
-import { createChart, ColorType, CandlestickSeries, LineSeries, Time } from 'lightweight-charts';
-import type { IChartApi, ISeriesApi, CandlestickData, LineData } from 'lightweight-charts';
+import {
+  ColorType,
+  CrosshairMode,
+  IChartApi,
+  ISeriesApi,
+  LineStyle,
+  Time,
+  UTCTimestamp,
+  createChart,
+} from 'lightweight-charts';
+import type { SeriesMarker } from 'lightweight-charts';
 import { Candle, Trade } from '../types';
+import { deriveMinBarSpacing, formatTickLabel, formatTooltipLabel, timeframeToMinutes, toTimestampSeconds } from '../utils/timeFormat';
 
 interface ChartProps {
   data: Candle[];
@@ -9,126 +19,202 @@ interface ChartProps {
   lineData?: { time: string | number; value: number }[];
   lineColor?: string;
   timezone?: string;
+  timeframe?: string;
 }
 
-const toDate = (value: Time): Date => {
-  if (typeof value === 'string' || typeof value === 'number') {
-    return new Date(value);
-  }
-  const { year, month, day } = value;
-  return new Date(year, month - 1, day);
+type CandlePoint = {
+  time: UTCTimestamp;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
 };
 
-export const LightweightChart: React.FC<ChartProps> = ({ data, trades, lineData, lineColor = '#2962FF', timezone = 'UTC' }) => {
+export const LightweightChart: React.FC<ChartProps> = ({
+  data,
+  trades,
+  lineData,
+  lineColor = '#2962FF',
+  timezone = 'UTC',
+  timeframe,
+}) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const lineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
 
+  // Mount chart once
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    // Safety: Dispose existing chart if it exists (e.g. strict mode double mount)
-    if (chartRef.current) {
-        try {
-            chartRef.current.remove();
-        } catch (e) {
-            // ignore error on disposal
-        }
-        chartRef.current = null;
-    }
-
-    const handleResize = () => {
-      // Check if chart matches the current ref and is not disposed
-      if (chartContainerRef.current && chartRef.current) {
-        try {
-             chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth });
-        } catch (e) {
-            // ignore error if chart is already disposed
-        }
-      }
-    };
-
-    // Initialize Chart
-    const timeFormatter = (timeValue: Time) => {
-      const date = toDate(timeValue);
-      if (Number.isNaN(date.getTime())) {
-        return String(timeValue);
-      }
-      return new Intl.DateTimeFormat('en-GB', {
-        timeZone: timezone,
-        hour12: false,
-        year: 'numeric',
-        month: 'short',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(date);
-    };
-
     const chart = createChart(chartContainerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: '#ffffff' },
-        textColor: '#000000', 
-      },
+      layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#0f172a' },
       grid: {
-        vertLines: { visible: false }, 
-        horzLines: { visible: false }, 
+        vertLines: { color: '#e2e8f0' },
+        horzLines: { color: '#f1f5f9' },
       },
-      width: chartContainerRef.current.clientWidth,
-      height: chartContainerRef.current.clientHeight || 400,
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: {
+          color: '#94a3b8',
+          width: 1,
+          style: LineStyle.Dashed,
+          labelBackgroundColor: '#0f172a',
+        },
+        horzLine: {
+          color: '#cbd5e1',
+          width: 1,
+          style: LineStyle.Dashed,
+          labelBackgroundColor: '#0f172a',
+        },
+      },
       timeScale: {
+        timeVisible: true,
+        secondsVisible: timeframeToMinutes(timeframe) < 1,
+        tickMarkFormatter: (time: Time) => formatTickLabel(time, timezone, timeframe),
+        minBarSpacing: deriveMinBarSpacing(timeframe),
         borderColor: '#e2e8f0',
       },
       localization: {
-        timeFormatter,
+        timeFormatter: (time: Time) => formatTooltipLabel(time, timezone),
       },
+      width: chartContainerRef.current.clientWidth,
+      height: chartContainerRef.current.clientHeight || 400,
     });
-    
+
+    const candleSeries = chart.addCandlestickSeries({
+      upColor: '#26a69a',
+      downColor: '#ef5350',
+      borderVisible: false,
+      wickUpColor: '#26a69a',
+      wickDownColor: '#ef5350',
+      priceLineVisible: false,
+    });
+    const trendSeries = chart.addLineSeries({
+      color: lineColor,
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+
     chartRef.current = chart;
+    candleSeriesRef.current = candleSeries;
+    lineSeriesRef.current = trendSeries;
 
-    // Add Series using v5 API
-    const candleSeries = chart.addSeries(CandlestickSeries, {
-        upColor: '#26a69a', 
-        downColor: '#ef5350', 
-        borderVisible: false, 
-        wickUpColor: '#26a69a', 
-        wickDownColor: '#ef5350' 
-    });
-    
-    if (data && data.length > 0) {
-        candleSeries.setData(data as unknown as CandlestickData<Time>[]);
-    }
-
-    if (lineData && lineData.length > 0) {
-        const lineSeries = chart.addSeries(LineSeries, { color: lineColor, lineWidth: 2 });
-        lineSeries.setData(lineData as unknown as LineData<Time>[]);
-    }
-
-    if (trades && trades.length > 0) {
-        const markers = trades.map(t => ({
-            time: t.exitTime as Time,
-            position: (t.direction === 'long' ? 'aboveBar' : 'belowBar') as "aboveBar" | "belowBar",
-            color: t.profit > 0 ? '#26a69a' : '#ef5350',
-            shape: (t.direction === 'long' ? 'arrowDown' : 'arrowUp') as "arrowDown" | "arrowUp",
-            text: t.profit > 0 ? 'WIN' : 'LOSS',
-        }));
-        // @ts-ignore
-        candleSeries.setMarkers(markers);
-    }
+    const handleResize = () => {
+      if (!chartContainerRef.current || !chartRef.current) return;
+      try {
+        const { width, height } = chartContainerRef.current.getBoundingClientRect();
+        chartRef.current.applyOptions({ width, height });
+      } catch {
+        /* ignore */
+      }
+    };
 
     window.addEventListener('resize', handleResize);
+    const observer = new ResizeObserver(handleResize);
+    observer.observe(chartContainerRef.current);
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      observer.disconnect();
       if (chartRef.current) {
         try {
-            chartRef.current.remove();
-        } catch (e) {
-            // ignore
+          chartRef.current.remove();
+        } catch {
+          /* ignore */
         }
-        chartRef.current = null; // Important: Nullify ref to prevent "Object is disposed" error
       }
+      chartRef.current = null;
+      candleSeriesRef.current = null;
+      lineSeriesRef.current = null;
     };
-  }, [data, trades, lineData, lineColor, timezone]);
+  }, []);
+
+  // Update scale / formatters on timeframe/timezone changes without recreating
+  useEffect(() => {
+    if (!chartRef.current) return;
+    chartRef.current.timeScale().applyOptions({
+      timeVisible: true,
+      secondsVisible: timeframeToMinutes(timeframe) < 1,
+      tickMarkFormatter: (time: Time) => formatTickLabel(time, timezone, timeframe),
+      minBarSpacing: deriveMinBarSpacing(timeframe),
+    });
+    chartRef.current.applyOptions({
+      localization: {
+        timeFormatter: (time: Time) => formatTooltipLabel(time, timezone),
+      },
+    });
+    lineSeriesRef.current?.applyOptions({ color: lineColor });
+  }, [timeframe, timezone, lineColor]);
+
+  // Update candle data when it changes
+  useEffect(() => {
+    if (!candleSeriesRef.current) return;
+    const normalizedData = (data || [])
+      .map((candle) => {
+        const ts = toTimestampSeconds(candle.time);
+        if (ts === null) return null;
+        return {
+          time: ts,
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close,
+        };
+      })
+      .filter(Boolean) as CandlePoint[];
+    candleSeriesRef.current.setData(normalizedData);
+    chartRef.current?.timeScale().fitContent();
+  }, [data]);
+
+  // Update line data when it changes
+  useEffect(() => {
+    if (!lineSeriesRef.current || !chartRef.current) return;
+    if (lineData && lineData.length > 0) {
+      const normalizedLine = lineData
+        .map((point) => {
+          const ts = toTimestampSeconds(point.time);
+          if (ts === null) return null;
+          return { time: ts, value: point.value };
+        })
+        .filter(Boolean) as { time: UTCTimestamp; value: number }[];
+      lineSeriesRef.current.setData(normalizedLine);
+    } else {
+      lineSeriesRef.current.setData([]);
+    }
+  }, [lineData]);
+
+  // Update markers when trades change
+  useEffect(() => {
+    if (!candleSeriesRef.current) return;
+    const series = candleSeriesRef.current as any;
+    if (typeof series?.setMarkers !== 'function') {
+      return;
+    }
+
+    if (trades && trades.length > 0) {
+      const markers = trades
+        .map((t) => {
+          const anchor = t.exitTime ?? t.entryTime;
+          const ts = anchor ? toTimestampSeconds(anchor) : null;
+          if (ts === null) return null;
+          const profitable = t.profit >= 0;
+          const isLong = t.direction === 'long';
+          return {
+            time: ts,
+            position: isLong ? 'aboveBar' : 'belowBar',
+            color: profitable ? '#26a69a' : '#ef5350',
+            shape: isLong ? 'arrowDown' : 'arrowUp',
+            text: t.profit.toFixed(2),
+          };
+        })
+        .filter(Boolean) as SeriesMarker<UTCTimestamp>[];
+      series.setMarkers(markers);
+    } else {
+      series.setMarkers([]);
+    }
+  }, [trades]);
 
   return <div ref={chartContainerRef} className="w-full h-full" />;
 };

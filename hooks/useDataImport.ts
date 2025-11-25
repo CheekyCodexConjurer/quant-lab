@@ -79,11 +79,20 @@ export const useDataImport = (asset: string, timeframe: string) => {
     }
   };
 
-  const importDukascopy = async (range: { startDate?: string; endDate?: string } = {}) => {
+  const importDukascopy = async (range: { startDate?: string; endDate?: string; fullHistory?: boolean } = {}) => {
     setStatus('running');
-    setLogs([]);
+    const payload = {
+      asset: asset.toUpperCase(),
+      timeframe: timeframe.toUpperCase(),
+      ...range,
+    };
+    setLogs([
+      `[${new Date().toISOString()}] Starting Dukascopy import: asset=${payload.asset}, timeframe=${payload.timeframe}, start=${
+        payload.startDate || 'oldest'
+      }, end=${payload.endDate || 'present'}, fullHistory=${Boolean(payload.fullHistory)}`,
+    ]);
     setProgress(0);
-    return runJob(apiClient.importDukascopy({ asset, timeframe, ...range }));
+    return runJob(apiClient.importDukascopy(payload));
   };
 
   const importCustom = async (filename: string) => {

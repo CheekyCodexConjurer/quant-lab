@@ -5,19 +5,22 @@ import { apiClient } from '../services/api/client';
 export type BasisType = 'median' | 'regression';
 
 export const useNormalizationSettings = (symbol: string) => {
-  const [normTimezone, setNormTimezone] = useState(true);
+  const [normTimezone, setNormTimezone] = useState('America/Sao_Paulo');
   const [normBasis, setNormBasis] = useState<BasisType>('median');
   const [normTickSize, setNormTickSize] = useState(TICK_PRESETS[symbol] ?? 0.01);
   const [isCustomTick, setIsCustomTick] = useState(false);
+  const [gapQuantEnabled, setGapQuantEnabled] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     const fetchRemoteSettings = async () => {
       try {
         const remote = await apiClient.getNormalization();
-        setNormTimezone((remote.timezone || 'UTC-3') === 'UTC-3');
+        setNormTimezone(remote.timezone || 'America/Sao_Paulo');
         setNormBasis((remote.basis as BasisType) || 'median');
         setNormTickSize(remote.tickSize ?? TICK_PRESETS[symbol] ?? 0.01);
+        const gap = remote.gapQuantization || {};
+        setGapQuantEnabled(Boolean(gap.enabled));
       } catch {
         // ignore errors
       }
@@ -48,9 +51,12 @@ export const useNormalizationSettings = (symbol: string) => {
     setIsSaving(true);
     try {
       await apiClient.updateNormalization({
-        timezone: normTimezone ? 'UTC-3' : 'UTC',
+        timezone: normTimezone,
         basis: normBasis,
         tickSize: normTickSize,
+        gapQuantization: {
+          enabled: gapQuantEnabled,
+        },
       });
     } finally {
       setIsSaving(false);
@@ -68,5 +74,7 @@ export const useNormalizationSettings = (symbol: string) => {
     isCustomTick,
     persistSettings,
     isSaving,
+    gapQuantEnabled,
+    setGapQuantEnabled,
   };
 };

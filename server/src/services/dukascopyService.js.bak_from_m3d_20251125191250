@@ -4,19 +4,11 @@ const path = require('path');
 const { getHistoricalRates } = require('dukascopy-node');
 const { describeNormalization } = require('./normalizationService');
 const { ASSET_SOURCES } = require('../constants/assets');
+const { buildTimeframesFromTicks, DEFAULT_TIMEFRAMES } = require('./timeframeBuilder');
 
 const DATA_DIR = path.join(__dirname, '../../data');
 const RAW_DIR = path.join(DATA_DIR, 'raw');
 const jobs = new Map();
-
-const TIMEFRAME_TO_MS = {
-  m1: 60 * 1000,
-  m5: 5 * 60 * 1000,
-  m15: 15 * 60 * 1000,
-  h1: 60 * 60 * 1000,
-  h4: 4 * 60 * 60 * 1000,
-  d1: 24 * 60 * 60 * 1000,
-};
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_RANGE_DAYS = 14;
@@ -41,14 +33,20 @@ const parseDateInput = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
-const resolveRange = (startDate, endDate) => {
+const resolveRange = (startDate, endDate, fullHistory = false) => {
   const now = new Date();
-  let from = parseDateInput(startDate) ?? new Date(now.getTime() - DEFAULT_RANGE_DAYS * DAY_MS);
-  let to = parseDateInput(endDate);
+  const earliest = new Date(Date.UTC(2000, 0, 1)); // safe sentinel for "Oldest Data Available"
 
+  let from = parseDateInput(startDate);
+  if (!from || fullHistory) {
+    from = earliest;
+  }
+
+  let to = parseDateInput(endDate);
   if (!to || to <= from) {
-    to = new Date(Math.min(now.getTime(), from.getTime() + DEFAULT_RANGE_DAYS * DAY_MS));
+    to = now;
   } else {
+    // include end day
     to = new Date(to.getTime() + DAY_MS);
   }
 
@@ -58,72 +56,6 @@ const resolveRange = (startDate, endDate) => {
     fromIso: from.toISOString(),
     toIso: to.toISOString(),
   };
-};
-
-const timeframeToMs = (timeframe) => TIMEFRAME_TO_MS[timeframe?.toLowerCase()] ?? TIMEFRAME_TO_MS.m1;
-
-const derivePrice = (tick) => {
-  if (!tick) return null;
-  if (typeof tick.midPrice === 'number') return tick.midPrice;
-  const ask = typeof tick.askPrice === 'number' ? tick.askPrice : undefined;
-  const bid = typeof tick.bidPrice === 'number' ? tick.bidPrice : undefined;
-  if (typeof ask === 'number' && typeof bid === 'number') {
-    return (ask + bid) / 2;
-  }
-  if (typeof ask === 'number') return ask;
-  if (typeof bid === 'number') return bid;
-  return null;
-};
-
-const convertTicksToCandles = (ticks, timeframe) => {
-  const frameMs = timeframeToMs(timeframe);
-  if (!frameMs || !Array.isArray(ticks) || ticks.length === 0) return [];
-
-  const ordered = [...ticks].sort((a, b) => a.timestamp - b.timestamp);
-  const candles = [];
-  let bucketStart = null;
-  let bucketPrices = [];
-  let volume = 0;
-
-  const flushBucket = () => {
-    if (!bucketPrices.length || bucketStart === null) return;
-    const open = bucketPrices[0];
-    const close = bucketPrices[bucketPrices.length - 1];
-    const high = Math.max(...bucketPrices);
-    const low = Math.min(...bucketPrices);
-    candles.push({
-      time: new Date(bucketStart).toISOString(),
-      open,
-      high,
-      low,
-      close,
-      volume: Number(volume.toFixed(6)),
-    });
-    bucketPrices = [];
-    volume = 0;
-  };
-
-  ordered.forEach((tick) => {
-    const price = derivePrice(tick);
-    if (price === null || Number.isNaN(tick.timestamp)) {
-      return;
-    }
-    const bucket = Math.floor(tick.timestamp / frameMs) * frameMs;
-    if (bucketStart === null) {
-      bucketStart = bucket;
-    } else if (bucket !== bucketStart) {
-      flushBucket();
-      bucketStart = bucket;
-    }
-    bucketPrices.push(price);
-    const tickVolume = Number(tick.askVolume || tick.bidVolume || 0);
-    if (!Number.isNaN(tickVolume)) {
-      volume += tickVolume;
-    }
-  });
-
-  flushBucket();
-  return candles;
 };
 
 const updateJob = (jobId, updater) => {
@@ -159,27 +91,31 @@ const markJobError = (jobId, errorMessage) =>
 
 const persistRawTicks = (asset, ticks, range) => {
   ensureDir(RAW_DIR);
-  const minimal = ticks.map((tick) => ({
-    timestamp: tick.timestamp,
-    bid: tick.bidPrice,
-    ask: tick.askPrice,
-    bidVolume: tick.bidVolume,
-    askVolume: tick.askVolume,
-  }));
   const filename = path.join(RAW_DIR, `${asset.toLowerCase()}-ticks.json`);
-  fs.writeFileSync(
-    filename,
-    JSON.stringify(
-      {
-        asset,
-        range: { start: range.fromIso, end: range.toIso },
-        count: minimal.length,
-        ticks: minimal,
-      },
-      null,
-      2
-    )
+
+  // Stream the JSON to disk to avoid building a giant string in memory.
+  const stream = fs.createWriteStream(filename, { encoding: 'utf8' });
+  stream.write(
+    JSON.stringify({
+      asset,
+      range: { start: range.fromIso, end: range.toIso },
+      count: ticks.length,
+    }).replace(/}$/, ',"ticks":[')
   );
+
+  ticks.forEach((tick, index) => {
+    const simplified = {
+      timestamp: tick.timestamp,
+      bid: tick.bidPrice,
+      ask: tick.askPrice,
+      bidVolume: tick.bidVolume,
+      askVolume: tick.askVolume,
+    };
+    stream.write((index > 0 ? ',' : '') + JSON.stringify(simplified));
+  });
+
+  stream.write(']}');
+  stream.end();
 };
 
 const writeCandlesToDisk = (asset, timeframe, candles, range) => {
@@ -205,11 +141,15 @@ const executeJob = async (job) => {
     pushJobLog(job.id, `Queued Dukascopy import for ${job.asset} (${job.timeframe})`);
     setJobProgress(job.id, 0.05);
 
-    const range = resolveRange(job.range.startDate, job.range.endDate);
+    const range = resolveRange(job.range.startDate, job.range.endDate, job.range.fullHistory);
     updateJob(job.id, (state) => {
       state.rangeResolved = { start: range.fromIso, end: range.toIso };
     });
-    pushJobLog(job.id, `Resolved range ${range.fromIso} -> ${range.toIso}`);
+    pushJobLog(
+      job.id,
+      `Resolved range ${range.fromIso} -> ${range.toIso} (fullHistory=${Boolean(job.range.fullHistory)})`
+    );
+
     pushJobLog(job.id, `Fetching ticks via dukascopy-node for ${source.instrument}`);
     setJobProgress(job.id, 0.2);
 
@@ -224,25 +164,26 @@ const executeJob = async (job) => {
       throw new Error('Provider returned no tick data for the requested interval');
     }
 
-    const formattedCount = Number(ticks.length).toLocaleString('en-US');
-    pushJobLog(job.id, `Downloaded ${formattedCount} ticks`);
-    setJobProgress(job.id, 0.45);
+    pushJobLog(job.id, `Downloaded ${Number(ticks.length).toLocaleString('en-US')} ticks`);
+    setJobProgress(job.id, 0.4);
 
     persistRawTicks(job.asset, ticks, range);
     pushJobLog(job.id, 'Persisted raw tick file (data/raw)');
-    setJobProgress(job.id, 0.6);
+    setJobProgress(job.id, 0.55);
 
-    const candles = convertTicksToCandles(ticks, job.timeframe);
-    if (!candles.length) {
-      throw new Error('Unable to build OHLC candles from tick stream');
-    }
+    const requestedFrames = Array.from(
+      new Set([...DEFAULT_TIMEFRAMES, (job.timeframe || 'M1').toUpperCase()])
+    );
+    pushJobLog(job.id, `Building timeframes: ${requestedFrames.join(', ')}`);
 
-    pushJobLog(job.id, `Converted ticks into ${candles.length} ${job.timeframe} candles`);
-    setJobProgress(job.id, 0.8);
+    const candlesByFrame = buildTimeframesFromTicks(ticks, requestedFrames);
+    candlesByFrame.forEach((candles, timeframe) => {
+      writeCandlesToDisk(job.asset, timeframe, candles, range);
+    });
 
-    writeCandlesToDisk(job.asset, job.timeframe, candles, range);
     pushJobLog(job.id, describeNormalization());
     pushJobLog(job.id, 'Saving to data-cache');
+    setJobProgress(job.id, 0.95);
     finalizeJob(job.id);
   } catch (error) {
     console.error('[dukascopy] job failed', error);
@@ -250,16 +191,19 @@ const executeJob = async (job) => {
   }
 };
 
-async function runDukascopyJob({ asset, timeframe, startDate, endDate }) {
+async function runDukascopyJob({ asset, timeframe, startDate, endDate, fullHistory }) {
+  const assetCode = (asset || '').toUpperCase();
+  const timeframeCode = (timeframe || '').toUpperCase();
+
   const jobId = uuid();
   const job = {
     id: jobId,
     status: 'running',
     progress: 0,
     logs: [],
-    asset,
-    timeframe,
-    range: { startDate, endDate },
+    asset: assetCode,
+    timeframe: timeframeCode,
+    range: { startDate, endDate, fullHistory: Boolean(fullHistory) },
   };
 
   jobs.set(jobId, job);

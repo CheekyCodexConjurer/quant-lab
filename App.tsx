@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AppStateProvider, useAppState } from './context/AppStateContext';
 import { Sidebar } from './components/layout/Sidebar';
 import { MainHeader } from './components/layout/MainHeader';
@@ -18,6 +18,8 @@ import { AnalysisView } from './views/AnalysisView';
 import { ApiDocsView } from './views/ApiDocsView';
 import { ViewState } from './types';
 import { apiClient } from './services/api/client';
+import { applyGapQuantization } from './utils/gapQuantization';
+import { useStrategies } from './hooks/useStrategies';
 
 const AppContent: React.FC = () => {
   const {
@@ -33,23 +35,35 @@ const AppContent: React.FC = () => {
     setSelectedTimeframes,
     chartTimezone,
     setChartTimezone,
+    downloadedAssets,
+    setDownloadedAssets,
   } = useAppState();
   const { data, refreshData } = useMarketData(activeSymbol, activeTimeframe);
   const indicators = useIndicators(data);
+  const strategies = useStrategies();
   const normalization = useNormalizationSettings(activeSymbol);
   const { backtestResult, runSimulation } = useBacktest();
+  const [importSymbol, setImportSymbol] = useState(activeSymbol);
+  const [importTimeframe, setImportTimeframe] = useState(activeTimeframe);
   const [selectedMarket, setSelectedMarket] = useState('Energy Commodities');
   const [startDate, setStartDate] = useState('Oldest Data Available');
   const [endDate, setEndDate] = useState('Present');
-  const dataImport = useDataImport(activeSymbol, activeTimeframe);
+  const dataImport = useDataImport(importSymbol, importTimeframe);
   const repoStatus =
     dataImport.status === 'running'
       ? 'syncing'
       : dataImport.status === 'completed'
-      ? 'synced'
-      : dataImport.status === 'error'
-      ? 'error'
-      : 'disconnected';
+        ? 'synced'
+        : dataImport.status === 'error'
+          ? 'error'
+          : 'disconnected';
+
+  useEffect(() => {
+    if (dataImport.status === 'running') return;
+    if (activeView !== ViewState.DATA) return;
+    setImportSymbol(activeSymbol);
+    setImportTimeframe(activeTimeframe);
+  }, [activeSymbol, activeTimeframe, activeView, dataImport.status]);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,10 +71,13 @@ const AppContent: React.FC = () => {
       try {
         const datasets = await apiClient.listDatasets();
         if (cancelled) return;
-        const entry = datasets.find((dataset: { asset: string; timeframes?: string[] }) => dataset.asset === activeSymbol);
-        if (entry?.timeframes?.length) {
-          setAvailableTimeframes(activeSymbol, entry.timeframes);
-        }
+        const normalizedAssets = datasets.map((dataset: { asset: string }) => dataset.asset);
+        setDownloadedAssets(normalizedAssets);
+        datasets.forEach((dataset: { asset: string; timeframes?: string[] }) => {
+          if (dataset.timeframes?.length) {
+            setAvailableTimeframes(dataset.asset, dataset.timeframes);
+          }
+        });
       } catch (error) {
         console.warn('[app] Failed to load available timeframes', error);
       }
@@ -91,17 +108,30 @@ const AppContent: React.FC = () => {
     }
   }, [symbolTimeframes, activeTimeframe, setActiveTimeframe]);
 
+  // Sync normalization timezone with chart timezone
+  useEffect(() => {
+    setChartTimezone(normalization.normTimezone);
+  }, [normalization.normTimezone, setChartTimezone]);
+
   const handleRunBacktest = () => {
     runSimulation(data);
     setActiveView(ViewState.ANALYSIS);
   };
+
+  const gapAdjustedData = useMemo(
+    () =>
+      applyGapQuantization(data, {
+        enabled: normalization.gapQuantEnabled,
+      }),
+    [data, normalization.gapQuantEnabled]
+  );
 
   const renderView = () => {
     switch (activeView) {
       case ViewState.CHART:
         return (
           <ChartView
-            data={data}
+            data={gapAdjustedData}
             backtestResult={backtestResult}
             indicators={indicators.indicators}
             indicatorData={indicators.indicatorData}
@@ -116,7 +146,7 @@ const AppContent: React.FC = () => {
             pinnedTimeframes={selectedTimeframes}
             onPinnedChange={setSelectedTimeframes}
             chartTimezone={chartTimezone}
-            onTimezoneChange={setChartTimezone}
+            availableAssets={downloadedAssets}
           />
         );
       case ViewState.CHART_INDICATOR:
@@ -130,6 +160,7 @@ const AppContent: React.FC = () => {
             deleteIndicator={indicators.deleteIndicator}
             saveIndicator={indicators.saveIndicator}
             toggleActiveIndicator={indicators.toggleActiveIndicator}
+            refreshFromDisk={indicators.refreshFromDisk}
           />
         );
       case ViewState.DATA:
@@ -152,9 +183,9 @@ const AppContent: React.FC = () => {
             }}
             logs={dataImport.logs}
             progress={dataImport.progress}
-            activeSymbol={activeSymbol}
-            onSymbolChange={setActiveSymbol}
-            activeTimeframe={activeTimeframe}
+            activeSymbol={importSymbol}
+            onSymbolChange={setImportSymbol}
+            activeTimeframe={importTimeframe}
           />
         );
       case ViewState.DATA_NORMALIZATION:
@@ -168,12 +199,22 @@ const AppContent: React.FC = () => {
             setTickFromPreset={normalization.setTickFromPreset}
             overrideTickSize={normalization.overrideTickSize}
             isCustomTick={normalization.isCustomTick}
+            gapQuantEnabled={normalization.gapQuantEnabled}
+            setGapQuantEnabled={normalization.setGapQuantEnabled}
             onSave={normalization.persistSettings}
             isSaving={normalization.isSaving}
           />
         );
       case ViewState.STRATEGY:
-        return <StrategyView onRunBacktest={handleRunBacktest} onNavigateToChart={() => setActiveView(ViewState.CHART)} />;
+        return (
+          <StrategyView
+            onRunBacktest={handleRunBacktest}
+            onNavigateToChart={() => setActiveView(ViewState.CHART)}
+            activeStrategy={strategies.activeStrategy}
+            onRefreshFromDisk={() => strategies.selectedId && strategies.refreshFromDisk(strategies.selectedId)}
+            onSave={(code) => strategies.selectedId && strategies.saveStrategy(strategies.selectedId, code)}
+          />
+        );
       case ViewState.ANALYSIS:
         return <AnalysisView backtestResult={backtestResult} activeSymbol={activeSymbol} onRunBacktest={handleRunBacktest} />;
       case ViewState.API_DOCS:

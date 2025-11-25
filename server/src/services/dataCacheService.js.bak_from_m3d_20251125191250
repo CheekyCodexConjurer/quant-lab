@@ -12,19 +12,18 @@ function ensureDataDir() {
 function listAssets() {
   ensureDataDir();
   const files = fs.readdirSync(DATA_DIR).filter((file) => file.endsWith('.json'));
-  const assets = files.map((file) => {
-    const [asset, timeframe] = file.replace('.json', '').split('-');
-    return { asset, timeframe };
-  });
   const metadata = {};
-  assets.forEach(({ asset, timeframe }) => {
-    if (!metadata[asset]) metadata[asset] = { timeframes: new Set() };
-    metadata[asset].timeframes.add(timeframe);
+  files.forEach((file) => {
+    const [asset, timeframe] = file.replace('.json', '').split('-');
+    if (!asset) return;
+    if (!metadata[asset]) metadata[asset] = new Set();
+    metadata[asset].add((timeframe || '').toUpperCase());
   });
-  return Object.entries(metadata).map(([asset, meta]) => ({
-    asset,
-    timeframes: Array.from(meta.timeframes),
-  }));
+  return Object.entries(metadata).map(([asset, set]) => {
+    const assetCode = asset.toUpperCase();
+    const timeframes = Array.from(set).sort();
+    return { asset: assetCode, label: assetCode, timeframes };
+  });
 }
 
 function readCandles(asset, timeframe) {
@@ -36,8 +35,8 @@ function readCandles(asset, timeframe) {
   }
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  } catch (err) {
-    console.error('[dataCache] failed to parse', err);
+  } catch (error) {
+    console.error('[dataCache] parse error', error);
     return null;
   }
 }

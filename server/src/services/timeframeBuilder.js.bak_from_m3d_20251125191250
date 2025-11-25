@@ -36,6 +36,7 @@ const convertTicksToMinuteCandles = (ticks, bucketMinutes = 1) => {
       close,
       volume: Number(volume.toFixed(6)),
     });
+    volume = 0;
   };
 
   ordered.forEach((tick) => {
@@ -66,6 +67,7 @@ const convertTicksToMinuteCandles = (ticks, bucketMinutes = 1) => {
       high = price;
       low = price;
       close = price;
+      volume = 0;
     } else if (currentBucket !== bucketTime) {
       flush();
       bucketTime = currentBucket;
@@ -107,6 +109,8 @@ const aggregateCandles = (sourceCandles, factorMinutes) => {
       close: bucket.close,
       volume: Number(bucket.volume.toFixed(6)),
     });
+    bucket = null;
+    bucketStart = null;
   };
 
   sourceCandles.forEach((candle) => {
@@ -116,11 +120,11 @@ const aggregateCandles = (sourceCandles, factorMinutes) => {
 
     if (bucketStart === null) {
       bucketStart = currentBucket;
-      bucket = { ...candle };
+      bucket = { ...candle, volume: candle.volume || 0 };
     } else if (currentBucket !== bucketStart) {
       flush();
       bucketStart = currentBucket;
-      bucket = { ...candle };
+      bucket = { ...candle, volume: candle.volume || 0 };
       return;
     } else {
       bucket.high = Math.max(bucket.high, candle.high);
@@ -148,8 +152,7 @@ const buildTimeframesFromTicks = (ticks, timeframeCodes = DEFAULT_TIMEFRAMES) =>
     if (code === 'M1') return;
     const def = TIMEFRAME_DEFS[code];
     if (!def) return;
-    const factor = def.minutes;
-    result.set(code, aggregateCandles(minuteCandles, factor));
+    result.set(code, aggregateCandles(minuteCandles, def.minutes));
   });
 
   return result;

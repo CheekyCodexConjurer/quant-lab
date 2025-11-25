@@ -8,6 +8,21 @@ export const ApiDocsView: React.FC = () => (
     </div>
 
     <div className="prose prose-slate max-w-none">
+      <h3 className="text-lg font-medium text-slate-900 mb-3">Local Code Locations</h3>
+      <div className="bg-white border border-slate-200 rounded p-4 mb-8">
+        <p className="text-sm text-slate-600 mb-3">Point your agents/LLMs directly to these folders to edit code on disk:</p>
+        <ul className="text-sm text-slate-700 space-y-2">
+          <li>
+            <span className="font-semibold text-slate-800">Indicators:</span>{' '}
+            <span className="font-mono text-[13px] bg-slate-50 px-2 py-1 border border-slate-200 rounded">indicators/</span>
+          </li>
+          <li>
+            <span className="font-semibold text-slate-800">Strategies:</span>{' '}
+            <span className="font-mono text-[13px] bg-slate-50 px-2 py-1 border border-slate-200 rounded">strategies/</span>
+          </li>
+        </ul>
+      </div>
+
       <h3 className="text-lg font-medium text-slate-900 mb-4">Indicator Structure</h3>
       <p className="text-sm text-slate-600 mb-6 leading-relaxed">
         Custom indicators must be written in Python and expose a specific entry point function. The engine passes a dictionary of NumPy arrays representing the market data.

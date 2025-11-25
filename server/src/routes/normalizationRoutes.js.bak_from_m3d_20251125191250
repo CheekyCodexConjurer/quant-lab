@@ -1,8 +1,5 @@
 const express = require('express');
-const {
-  getNormalizationSettings,
-  updateNormalizationSettings,
-} = require('../services/normalizationService');
+const { getNormalizationSettings, updateNormalizationSettings } = require('../services/normalizationService');
 
 const router = express.Router();
 

@@ -48,9 +48,15 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
   const sanitizeDateInput = (value: string) => (/^\d{2}-\d{2}-\d{4}$/.test(value) ? value : undefined);
 
   const handleDukascopyImport = async () => {
+    const start = sanitizeDateInput(startDate);
+    const end = sanitizeDateInput(endDate);
+    const isOldest = startDate.trim().toLowerCase().startsWith('oldest');
+    const isPresent = endDate.trim().toLowerCase().startsWith('present');
+
     await onDukascopyImport({
-      startDate: sanitizeDateInput(startDate),
-      endDate: sanitizeDateInput(endDate),
+      startDate: isOldest ? undefined : start,
+      endDate: isPresent ? undefined : end,
+      fullHistory: isOldest,
     });
   };
 

@@ -32,10 +32,15 @@ export interface CustomIndicator {
   id: string;
   name: string;
   code: string;
+  filePath: string;
+  lastModified: number;
+  sizeBytes?: number;
   isActive: boolean;
   isVisible: boolean;
   createdAt: number;
   updatedAt: number;
+  appliedVersion: number;
+  hasUpdate?: boolean;
 }
 
 export enum ViewState {
@@ -46,4 +51,14 @@ export enum ViewState {
   ANALYSIS = 'ANALYSIS',
   STRATEGY = 'STRATEGY',
   API_DOCS = 'API_DOCS'
+}
+
+export interface StrategyFile {
+  id: string;
+  name: string;
+  code: string;
+  filePath: string;
+  lastModified: number;
+  sizeBytes?: number;
+  appliedVersion: number;
 }

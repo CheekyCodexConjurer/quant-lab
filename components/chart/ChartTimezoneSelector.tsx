@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { TIMEZONE_OPTIONS, getTimezoneById } from '../../constants/timezones';
 
 type ChartTimezoneSelectorProps = {
@@ -51,17 +51,18 @@ export const ChartTimezoneSelector: React.FC<ChartTimezoneSelectorProps> = ({ ti
   }, [timezoneId]);
 
   return (
-    <div ref={containerRef} className="absolute bottom-0 right-0 z-50">
+    <div ref={containerRef} className="relative z-50">
       <button
         onClick={() => setOpen((prev) => !prev)}
-        className="flex items-center px-3 py-1.5 bg-white text-slate-600 text-[11px] font-sans hover:text-slate-900 hover:bg-slate-50 transition-colors border-t border-l border-slate-200"
+        className="flex items-center gap-2 px-3 py-1.5 bg-white text-slate-600 text-xs font-medium border border-slate-200 rounded-sm shadow-sm hover:text-slate-900 hover:border-slate-300 transition-all"
         aria-label="Select chart timezone"
       >
         <span className="tabular-nums">{currentTime}</span>
+        <ChevronDown size={12} className="text-slate-400" />
       </button>
 
       {isOpen && (
-        <div className="absolute bottom-full right-0 mb-1 w-64 bg-white border border-slate-200 rounded shadow-xl py-1 max-h-[400px] overflow-y-auto custom-scrollbar z-50">
+        <div className="absolute top-full right-0 mt-1 w-64 bg-white border border-slate-200 rounded shadow-xl py-1 max-h-[400px] overflow-y-auto custom-scrollbar z-50">
           {TIMEZONE_OPTIONS.map((tz) => {
             const isActive = tz.id === timezoneId;
             return (
