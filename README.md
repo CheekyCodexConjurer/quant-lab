@@ -32,7 +32,7 @@ src-root
 |-- utils/
 |   |-- mockData.ts          # Fabricador de candles p/ multiplos ativos/timeframes
 |-- types.ts                 # Contratos compartilhados (Candle, Trade, ViewState, etc.)
-|-- vite.config.ts           # Porta 3070, aliases e injecao do GEMINI_API_KEY
+|-- vite.config.ts           # Porta 3070 (strict), aliases e injecao do GEMINI_API_KEY
 ```
 
 Principais conceitos:
@@ -65,7 +65,7 @@ Principais conceitos:
    ```bash
    npm run dev
    ```
-   - O Vite abrira em `http://localhost:3070` (porta e host configurados em `vite.config.ts`).
+   - O Vite abrira em `http://localhost:3070` (porta fixada com `strictPort` em `vite.config.ts`).
 
 ### Scripts Disponiveis
 

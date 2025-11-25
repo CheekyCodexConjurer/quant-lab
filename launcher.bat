@@ -10,6 +10,6 @@ IF NOT EXIST node_modules (
 )
 
 echo [launcher] Starting Vite dev server on http://localhost:3070
-call npm run dev
+call npm run dev -- --port 3070 --strictPort
 
 endlocal
