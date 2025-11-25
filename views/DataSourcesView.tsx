@@ -1,5 +1,5 @@
 import React from 'react';
-import { DownloadCloud, Globe, FileSpreadsheet, Upload, Database, RefreshCw } from 'lucide-react';
+import { DownloadCloud, Globe, FileSpreadsheet, Upload } from 'lucide-react';
 import { DUKASCOPY_MARKETS, MarketAsset } from '../constants/markets';
 import { DatePickerInput } from '../components/common/DatePickerInput';
 import { SyncLogConsole } from '../components/panels/SyncLogConsole';
@@ -11,11 +11,11 @@ type DataSourcesViewProps = {
   setStartDate: (value: string) => void;
   endDate: string;
   setEndDate: (value: string) => void;
-  repoStatus: 'disconnected' | 'syncing' | 'synced' | 'error';
-  onRepoSync: () => Promise<void>;
-  onDukascopyFetch: () => Promise<void>;
+  importStatus: 'idle' | 'running' | 'completed' | 'error';
+  onDukascopyImport: (range: { startDate?: string; endDate?: string }) => Promise<void>;
   onCustomImport: () => Promise<void>;
-  syncLogs: string[];
+  logs?: string[];
+  progress?: number;
   activeSymbol: string;
   onSymbolChange: (symbol: string) => void;
   activeTimeframe: string;
@@ -28,11 +28,11 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
   setStartDate,
   endDate,
   setEndDate,
-  repoStatus,
-  onRepoSync,
-  onDukascopyFetch,
+  importStatus,
+  onDukascopyImport,
   onCustomImport,
-  syncLogs,
+  logs = [],
+  progress = 0,
   activeSymbol,
   onSymbolChange,
   activeTimeframe,
@@ -45,6 +45,15 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
     }
   };
 
+  const sanitizeDateInput = (value: string) => (/^\d{2}-\d{2}-\d{4}$/.test(value) ? value : undefined);
+
+  const handleDukascopyImport = async () => {
+    await onDukascopyImport({
+      startDate: sanitizeDateInput(startDate),
+      endDate: sanitizeDateInput(endDate),
+    });
+  };
+
   return (
     <div className="max-w-6xl mx-auto">
       <div className="mb-8">
@@ -53,31 +62,6 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-        <div className="bg-white p-8 border border-slate-200 hover:border-slate-300 transition-colors flex flex-col min-h-[340px] relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity pointer-events-none">
-            <Database size={120} />
-          </div>
-          <div className="relative z-10 flex-1">
-            <div className="w-10 h-10 bg-slate-900 flex items-center justify-center mb-6 rounded-sm">
-              <RefreshCw className="text-white" size={20} />
-            </div>
-            <h3 className="text-lg font-medium text-slate-900 mb-1">Lean Repo Sync</h3>
-            <p className="text-xs font-mono text-slate-400 mb-6">Source: trader-matthews-lean-lab</p>
-            <p className="text-sm text-slate-600 leading-relaxed">
-              Connects to your normalized futures workspace and hydrates {activeSymbol}/{activeTimeframe} candles locally for quick iteration.
-            </p>
-          </div>
-          <div className="relative z-10 mt-auto pt-6 border-t border-slate-50">
-            <button
-              onClick={onRepoSync}
-              disabled={repoStatus === 'syncing'}
-              className="w-full py-3 bg-white border border-slate-200 text-slate-900 text-xs font-bold uppercase tracking-widest hover:border-slate-400 transition-colors disabled:opacity-60"
-            >
-              {repoStatus === 'syncing' ? 'Syncing...' : 'Sync Repository'}
-            </button>
-          </div>
-        </div>
-
         <div className="bg-white p-8 border border-slate-200 hover:border-slate-300 transition-colors group relative flex flex-col min-h-[340px]">
           <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity pointer-events-none">
             <DownloadCloud size={120} />
@@ -88,7 +72,6 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
             </div>
             <h3 className="text-lg font-medium text-slate-900 mb-1">Dukascopy Data Store</h3>
             <p className="text-xs font-mono text-slate-400 mb-6">Wrapper: Leo4815162342/dukascopy-node</p>
-
             <div className="space-y-4 mb-6">
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Market Category</label>
@@ -137,11 +120,11 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
           </div>
           <div className="relative z-10 mt-auto pt-6 border-t border-slate-50">
             <button
-              onClick={onDukascopyFetch}
-              disabled={repoStatus === 'syncing'}
+              onClick={handleDukascopyImport}
+              disabled={importStatus === 'running'}
               className="w-full py-3 bg-slate-900 text-white text-xs font-bold uppercase tracking-widest hover:bg-slate-800 transition-colors disabled:opacity-50"
             >
-              {repoStatus === 'syncing' ? 'Downloading...' : 'Import from Dukascopy'}
+              {importStatus === 'running' ? 'Downloading...' : 'Import from Dukascopy'}
             </button>
           </div>
         </div>
@@ -177,7 +160,7 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
         </div>
       </div>
 
-      <SyncLogConsole logs={syncLogs} />
+      <SyncLogConsole logs={logs} progress={progress} isRunning={importStatus === 'running'} />
     </div>
   );
 };

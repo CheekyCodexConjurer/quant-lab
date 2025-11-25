@@ -1,0 +1,32 @@
+const express = require('express');
+const { runDukascopyJob, ingestCustomFile, getJob } = require('../services/dukascopyService');
+
+const router = express.Router();
+
+router.post('/dukascopy', async (req, res) => {
+  const { asset, timeframe, startDate, endDate } = req.body || {};
+  if (!asset || !timeframe) {
+    return res.status(400).json({ error: 'asset and timeframe are required' });
+  }
+  const job = await runDukascopyJob({ asset, timeframe, startDate, endDate });
+  res.status(202).json(job);
+});
+
+router.post('/custom', async (req, res) => {
+  const { filename } = req.body || {};
+  if (!filename) {
+    return res.status(400).json({ error: 'filename is required' });
+  }
+  const job = await ingestCustomFile({ filename });
+  res.status(202).json(job);
+});
+
+router.get('/jobs/:id', (req, res) => {
+  const job = getJob(req.params.id);
+  if (!job) {
+    return res.status(404).json({ error: 'job not found' });
+  }
+  res.json(job);
+});
+
+module.exports = router;

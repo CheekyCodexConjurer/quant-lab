@@ -12,8 +12,8 @@ The Lab e um aplicativo React + Vite que emula o workflow diario de pesquisa qua
 
 | Area | O que entrega | Onde vive |
 | --- | --- | --- |
-| **Chart / Chart Indicator** | Visualiza candles simulados e overlays personalizados gerados a partir do editor Python. | `App.tsx` + `components/LightweightChart.tsx` |
-| **Data Sources / Normalization** | Simula importacoes da pasta `trader-matthews-lean-lab/data/...`, normaliza timezone, tick size e basis. | `App.tsx` (modulos de estado) |
+| **Chart / Chart Indicator** | Visualiza candles simulados e overlays personalizados gerados a partir do editor Python. Inclui seletor ao vivo de timeframes e timezone. | `App.tsx` + `components/LightweightChart.tsx` |
+| **Data Sources / Normalization** | Simula importacoes da pasta `trader-matthews-lean-lab/data/...`, gerencia timeframes locais (disponiveis + favoritos) e normaliza timezone/tick size/basis. | `App.tsx` (modulos de estado) |
 | **Strategy / Analysis** | Executa `runBacktest` (SMA 9x21) em dados mock e exibe metricas, equity curve e trade log. | `services/backtestEngine.ts`, `components/StatsCard.tsx` |
 | **Utils & Types** | Define contratos (`types.ts`) e gerador deterministico de dados (`utils/mockData.ts`). | `/utils`, `/types` |
 
@@ -32,7 +32,7 @@ src-root
 |-- utils/
 |   |-- mockData.ts          # Fabricador de candles p/ multiplos ativos/timeframes
 |-- types.ts                 # Contratos compartilhados (Candle, Trade, ViewState, etc.)
-|-- vite.config.ts           # Porta 3070 (strict), aliases e injecao do GEMINI_API_KEY
+|-- vite.config.ts           # Porta padrao 3070 (configuravel via env), aliases e injecao de variaveis Vite (ex.: VITE_BACKEND_URL)
 ```
 
 Principais conceitos:
@@ -48,7 +48,7 @@ Principais conceitos:
 
 - **Node.js 18 LTS ou superior** (recomendado 18.18+ para Vite 6).
 - **npm 9+** (ou outro gerenciador compativel).
-- Opcional: configurar `GEMINI_API_KEY` caso deseje expor a chave ao front-end (o valor e injetado via `vite.config.ts`, ainda nao consumido diretamente).
+- Configure `VITE_BACKEND_URL` para apontar para o backend local (padrão `http://localhost:4800`).
 
 ---
 
@@ -58,14 +58,49 @@ Principais conceitos:
    ```bash
    npm install
    ```
-2. **(Opcional) configure variaveis de ambiente**
-   - Crie `.env.local` e defina `GEMINI_API_KEY=...`.
-   - O Vite injetara a chave como `process.env.GEMINI_API_KEY` durante o build.
+2. **Configure variaveis de ambiente**
+   - Crie `.env.local` e defina `VITE_BACKEND_URL=http://localhost:4800`.
+   - O Vite injetara a URL do backend em `services/api/client.ts`.
 3. **Suba o servidor de desenvolvimento**
    ```bash
    npm run dev
    ```
-   - O Vite abrira em `http://localhost:3070` (porta fixada com `strictPort` em `vite.config.ts`).
+   - O Vite tentara abrir em `http://localhost:3070`. Se a porta estiver ocupada ou se `VITE_DEV_PORT` estiver definido, ele ajusta automaticamente para uma porta livre.
+
+### Backend local (Fase 1)
+
+1. **Instale as dependencias do servidor**
+   ```bash
+   cd server
+   npm install
+   ```
+2. **Rode em modo desenvolvimento**
+   ```bash
+   npm run backend:dev
+   ```
+   ou a partir da raiz:
+   ```bash
+   npm run backend:dev
+   ```
+   - O servidor Express tenta `http://localhost:4800`. Se `SERVER_PORT` for definido ele respeita o valor; caso contrario, procura a proxima porta livre (4801, 4802, ...).
+
+### Scripts úteis / automação (Fase 6)
+
+| Script | Comando | Uso |
+| --- | --- | --- |
+| `app` | `npm run app` | Inicia backend (nodemon) e frontend (Vite) em paralelo. |
+| `backend:dev` | `npm run backend:dev` | Apenas backend com reload. |
+| `backend:start` | `npm run backend:start` | Backend em modo produção (sem nodemon). |
+| `test:backend` | `npm run test:backend` | Executa os testes do backend (`server/test/timeframeBuilder.test.js`). |
+
+### API disponível (Fases 2-4 - mock)
+- `POST /api/import/dukascopy` – recebe `{ asset, timeframe, startDate?, endDate? }` e retorna um job simulado com logs.
+- `POST /api/import/custom` – recebe `{ filename }` e cria job de ingestão manual.
+- `GET /api/import/jobs/:id` – consulta status/logs de um job.
+- `GET /api/normalization` – retorna as regras atuais (timezone, tick size, basis).
+- `POST /api/normalization` – atualiza regras de normalização (persistência em memória nesta fase).
+- `GET /api/data` – lista datasets presentes no cache local.
+- `GET /api/data/:asset/:timeframe` – retorna candles mockados para consumo pelo frontend.
 
 ### Scripts Disponiveis
 
@@ -79,8 +114,8 @@ Principais conceitos:
 
 ## Fluxo de Trabalho no App
 
-1. **Selecionar ativo e timeframe**  
-   - Combo boxes no topo do Chart controlam o dataset alimentado por `generateData`.
+1. **Selecionar ativo, timeframe e timezone**  
+   - Combo boxes no topo controlam o dataset, e o botão no canto inferior direito permite alternar o timezone do eixo/tooltip em tempo real.
 2. **Sincronizar ou importar dados**  
    - Botoes em *Data Sources* simulam leitura do repositorio `trader-matthews-lean-lab` e atualizam os candles visiveis.
 3. **Configurar normalizacao**  
@@ -116,17 +151,26 @@ Principais conceitos:
 
 ## Extensoes e Proximos Passos
 
-1. **Integrar loaders reais** - conectar `handleRepoSync` as rotinas de ETL ja existentes e validar com dados historicos.  
+1. **Integrar loaders reais** - conectar o fluxo de importacao (hook `useRepoSync`/`handleDukascopyFetch`) as rotinas de ETL ja existentes e validar com dados historicos.  
 2. **Adicionar multiplos indicadores** - expandir a lista `indicators` e renderizar multiplas series na LightweightChart.  
 3. **Sincronizar com Lean** - usar `handleRunBacktest` como gatilho para uma API que empacota arquivos e dispara um job no Lean CLI.  
 4. **Internacionalizacao** - mover strings hardcoded em `App.tsx` para um dicionario e suportar idiomas adicionais.  
 5. **Testes automatizados** - adicionar testes de unidade (Vitest/React Testing Library) para garantir integridade do gerador de dados e do motor de backtest.
 
+### Testes automatizados (backend)
+
+```bash
+npm run test:backend
+```
+
+- Executa `npm run test --prefix server`, que roda `node test/timeframeBuilder.test.js`.
+- O script valida a agregacao de ticks -> M1/M5/H1, garantindo que a pipeline de importacao nao quebre quando o builder for alterado.
+
 ---
 
 ## Solucao de Problemas
 
-- **Porta ja usada**: defina `PORT=XXXX` antes de `npm run dev` ou ajuste `server.port` no `vite.config.ts`.  
+- **Porta ja usada**: defina `VITE_DEV_PORT=XXXX` (frontend) ou `SERVER_PORT=XXXX` (backend). Se nao definir, ambos procuram portas livres automaticamente, evitando conflitos quando ha varias instancias rodando.  
 - **Charts nao renderizam**: verifique se o container pai possui altura definida; o `LightweightChart` usa `clientHeight` para dimensionar.  
 - **Sem dados na Analysis**: certifique-se de ter executado **Run Simulation** apos qualquer alteracao de simbolo/timeframe; o estado `backtestResult` e resetado sempre que novos candles sao carregados.
 

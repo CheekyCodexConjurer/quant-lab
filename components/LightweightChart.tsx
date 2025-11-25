@@ -8,9 +8,18 @@ interface ChartProps {
   trades?: Trade[];
   lineData?: { time: string | number; value: number }[];
   lineColor?: string;
+  timezone?: string;
 }
 
-export const LightweightChart: React.FC<ChartProps> = ({ data, trades, lineData, lineColor = '#2962FF' }) => {
+const toDate = (value: Time): Date => {
+  if (typeof value === 'string' || typeof value === 'number') {
+    return new Date(value);
+  }
+  const { year, month, day } = value;
+  return new Date(year, month - 1, day);
+};
+
+export const LightweightChart: React.FC<ChartProps> = ({ data, trades, lineData, lineColor = '#2962FF', timezone = 'UTC' }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
@@ -39,6 +48,22 @@ export const LightweightChart: React.FC<ChartProps> = ({ data, trades, lineData,
     };
 
     // Initialize Chart
+    const timeFormatter = (timeValue: Time) => {
+      const date = toDate(timeValue);
+      if (Number.isNaN(date.getTime())) {
+        return String(timeValue);
+      }
+      return new Intl.DateTimeFormat('en-GB', {
+        timeZone: timezone,
+        hour12: false,
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(date);
+    };
+
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: '#ffffff' },
@@ -52,7 +77,10 @@ export const LightweightChart: React.FC<ChartProps> = ({ data, trades, lineData,
       height: chartContainerRef.current.clientHeight || 400,
       timeScale: {
         borderColor: '#e2e8f0',
-      }
+      },
+      localization: {
+        timeFormatter,
+      },
     });
     
     chartRef.current = chart;
@@ -100,7 +128,7 @@ export const LightweightChart: React.FC<ChartProps> = ({ data, trades, lineData,
         chartRef.current = null; // Important: Nullify ref to prevent "Object is disposed" error
       }
     };
-  }, [data, trades, lineData, lineColor]);
+  }, [data, trades, lineData, lineColor, timezone]);
 
   return <div ref={chartContainerRef} className="w-full h-full" />;
 };

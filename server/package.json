@@ -1,0 +1,23 @@
+{
+  "name": "the-lab-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local backend for The Lab (dukascopy integration placeholder)",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "test": "node test/timeframeBuilder.test.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dukascopy-node": "^1.45.1",
+    "express": "^4.19.2",
+    "morgan": "^1.10.0",
+    "node-fetch": "^2.7.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}

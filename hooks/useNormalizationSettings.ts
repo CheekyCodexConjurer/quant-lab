@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { TICK_PRESETS } from '../constants/markets';
+import { apiClient } from '../services/api/client';
 
 export type BasisType = 'median' | 'regression';
 
@@ -8,6 +9,21 @@ export const useNormalizationSettings = (symbol: string) => {
   const [normBasis, setNormBasis] = useState<BasisType>('median');
   const [normTickSize, setNormTickSize] = useState(TICK_PRESETS[symbol] ?? 0.01);
   const [isCustomTick, setIsCustomTick] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    const fetchRemoteSettings = async () => {
+      try {
+        const remote = await apiClient.getNormalization();
+        setNormTimezone((remote.timezone || 'UTC-3') === 'UTC-3');
+        setNormBasis((remote.basis as BasisType) || 'median');
+        setNormTickSize(remote.tickSize ?? TICK_PRESETS[symbol] ?? 0.01);
+      } catch {
+        // ignore errors
+      }
+    };
+    fetchRemoteSettings();
+  }, [symbol]);
 
   useEffect(() => {
     if (!isCustomTick) {
@@ -28,6 +44,19 @@ export const useNormalizationSettings = (symbol: string) => {
     setIsCustomTick(true);
   };
 
+  const persistSettings = async () => {
+    setIsSaving(true);
+    try {
+      await apiClient.updateNormalization({
+        timezone: normTimezone ? 'UTC-3' : 'UTC',
+        basis: normBasis,
+        tickSize: normTickSize,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return {
     normTimezone,
     setNormTimezone,
@@ -37,5 +66,7 @@ export const useNormalizationSettings = (symbol: string) => {
     setTickFromPreset,
     overrideTickSize,
     isCustomTick,
+    persistSettings,
+    isSaving,
   };
 };
