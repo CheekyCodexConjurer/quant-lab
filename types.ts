@@ -62,3 +62,22 @@ export interface StrategyFile {
   sizeBytes?: number;
   appliedVersion: number;
 }
+
+export interface ChartAppearance {
+  backgroundColor: string;
+  gridEnabled: boolean;
+  gridColor: string;
+  candleUp: {
+    body: string;
+    border: string;
+    wick: string;
+  };
+  candleDown: {
+    body: string;
+    border: string;
+    wick: string;
+  };
+  usePrevCloseColoring: boolean;
+  scaleTextColor: string;
+  scaleTextSize: number;
+}

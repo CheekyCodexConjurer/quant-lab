@@ -1,8 +1,27 @@
 @echo off
-setlocal
+setlocal EnableExtensions EnableDelayedExpansion
 
 REM Launch The Lab dev server from repo root
 cd /d "%~dp0"
+
+REM Pick a free dev port (tries in order)
+set PORT_CANDIDATES=3070 5173 4173
+set DEV_PORT=
+
+for %%P in (%PORT_CANDIDATES%) do (
+    netstat -ano | findstr /R /C:":%%P " | findstr /C:"LISTENING" >nul
+    if errorlevel 1 (
+        set DEV_PORT=%%P
+        goto :PORT_FOUND
+    )
+)
+
+echo [launcher] Nenhuma porta livre nas opcoes: %PORT_CANDIDATES%.
+echo [launcher] Feche processos nessas portas ou ajuste PORT_CANDIDATES no script.
+exit /b 1
+
+:PORT_FOUND
+echo [launcher] Usando porta de desenvolvimento: %DEV_PORT%
 
 IF NOT EXIST node_modules (
     echo [launcher] Installing dependencies...
@@ -21,11 +40,11 @@ start "The Lab Backend" cmd /k "cd /d %~dp0server && npm run dev"
 echo [launcher] Waiting backend boot...
 timeout /t 3 > nul
 
-echo [launcher] Starting Vite dev server on http://localhost:3070
-start "The Lab Dev Server" cmd /k "cd /d %~dp0 && npm run dev -- --port 3070 --strictPort"
+echo [launcher] Starting Vite dev server on http://localhost:%DEV_PORT%
+start "The Lab Dev Server" cmd /k "cd /d %~dp0 && npm run dev -- --port %DEV_PORT% --strictPort"
 echo [launcher] Waiting for server boot...
 timeout /t 3 > nul
-echo [launcher] Opening Chrome at http://localhost:3070
-start "" chrome "http://localhost:3070"
+echo [launcher] Opening Chrome at http://localhost:%DEV_PORT%
+start "" chrome "http://localhost:%DEV_PORT%"
 
 endlocal

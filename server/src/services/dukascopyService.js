@@ -4,18 +4,23 @@ const path = require('path');
 const { getHistoricalRates } = require('dukascopy-node');
 const { describeNormalization } = require('./normalizationService');
 const { ASSET_SOURCES } = require('../constants/assets');
+const EARLIEST = require('../constants/dukascopyEarliest');
 
 const DATA_DIR = path.join(__dirname, '../../data');
 const RAW_DIR = path.join(DATA_DIR, 'raw');
 const jobs = new Map();
 
 const TIMEFRAME_TO_MS = {
+  tick: 1,
+  t: 1,
   m1: 60 * 1000,
   m5: 5 * 60 * 1000,
   m15: 15 * 60 * 1000,
+  m30: 30 * 60 * 1000,
   h1: 60 * 60 * 1000,
   h4: 4 * 60 * 60 * 1000,
   d1: 24 * 60 * 60 * 1000,
+  mn1: 30 * 24 * 60 * 60 * 1000,
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -32,35 +37,30 @@ const ensureDir = (dirPath) => {
   }
 };
 
-const parseDateInput = (value) => {
-  if (!value || typeof value !== 'string') return null;
-  const match = value.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-  if (!match) return null;
-  const [, dd, mm, yyyy] = match;
-  const date = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
-  return Number.isNaN(date.getTime()) ? null : date;
+const pickEarliest = (asset, timeframe) => {
+  const map = EARLIEST[asset] || {};
+  const defaults = EARLIEST.DEFAULTS || {};
+  const tf = timeframe?.toLowerCase() || 'tick';
+  if (tf === 'tick' || tf === 't' || tf === 's1') return map.tick || defaults.tick;
+  if (['m1', 'm5', 'm15', 'm30'].includes(tf)) return map.m1 || defaults.m1;
+  if (['h1', 'h4'].includes(tf)) return map.h1 || defaults.h1;
+  if (['d1', 'mn1'].includes(tf)) return map.d1 || defaults.d1;
+  return map.tick || defaults.tick;
 };
 
-const resolveRange = (startDate, endDate) => {
+const resolveRange = (asset, timeframe) => {
   const now = new Date();
-  let from = parseDateInput(startDate) ?? new Date(now.getTime() - DEFAULT_RANGE_DAYS * DAY_MS);
-  let to = parseDateInput(endDate);
-
-  if (!to || to <= from) {
-    to = new Date(Math.min(now.getTime(), from.getTime() + DEFAULT_RANGE_DAYS * DAY_MS));
-  } else {
-    to = new Date(to.getTime() + DAY_MS);
-  }
-
+  const earliestIso = pickEarliest(asset, timeframe);
+  const from = earliestIso ? new Date(earliestIso) : new Date(now.getTime() - DEFAULT_RANGE_DAYS * DAY_MS);
   return {
     from,
-    to,
+    to: now,
     fromIso: from.toISOString(),
-    toIso: to.toISOString(),
+    toIso: now.toISOString(),
   };
 };
 
-const timeframeToMs = (timeframe) => TIMEFRAME_TO_MS[timeframe?.toLowerCase()] ?? TIMEFRAME_TO_MS.m1;
+const timeframeToMs = (timeframe) => TIMEFRAME_TO_MS[timeframe?.toLowerCase()] ?? TIMEFRAME_TO_MS.tick;
 
 const derivePrice = (tick) => {
   if (!tick) return null;
@@ -202,47 +202,46 @@ const executeJob = async (job) => {
   }
 
   try {
-    pushJobLog(job.id, `Queued Dukascopy import for ${job.asset} (${job.timeframe})`);
+    const frames = EARLIEST[job.asset]?.frames || EARLIEST.DEFAULTS.frames || ['tick'];
+    const perFrameProgress = 0.9 / frames.length; // leave 10% for wrap-up
+    pushJobLog(job.id, `Queued Dukascopy import for ${job.asset}: frames=${frames.join(', ')}`);
     setJobProgress(job.id, 0.05);
 
-    const range = resolveRange(job.range.startDate, job.range.endDate);
-    updateJob(job.id, (state) => {
-      state.rangeResolved = { start: range.fromIso, end: range.toIso };
-    });
-    pushJobLog(job.id, `Resolved range ${range.fromIso} -> ${range.toIso}`);
-    pushJobLog(job.id, `Fetching ticks via dukascopy-node for ${source.instrument}`);
-    setJobProgress(job.id, 0.2);
+    for (const frame of frames) {
+      const range = resolveRange(job.asset, frame);
+      updateJob(job.id, (state) => {
+        state.rangeResolved = { start: range.fromIso, end: range.toIso };
+      });
+      pushJobLog(job.id, `Resolved range ${range.fromIso} -> ${range.toIso} (timeframe=${frame})`);
 
-    const ticks = await getHistoricalRates({
-      instrument: source.instrument,
-      dates: { from: range.from, to: range.to },
-      timeframe: 'tick',
-      format: 'json',
-    });
+      const data = await getHistoricalRates({
+        instrument: source.instrument,
+        dates: { from: range.from, to: range.to },
+        timeframe: frame,
+        format: 'json',
+      });
 
-    if (!Array.isArray(ticks) || ticks.length === 0) {
-      throw new Error('Provider returned no tick data for the requested interval');
+      if (!Array.isArray(data) || data.length === 0) {
+        pushJobLog(job.id, `No data returned for ${frame} (${range.fromIso} -> ${range.toIso})`);
+        setJobProgress(job.id, Math.min(0.95, job.progress + perFrameProgress));
+        continue;
+      }
+
+      if (frame === 'tick') {
+        const formattedCount = Number(data.length).toLocaleString('en-US');
+        pushJobLog(job.id, `Downloaded ${formattedCount} ticks`);
+        persistRawTicks(job.asset, data, range);
+        pushJobLog(job.id, 'Persisted raw tick file (data/raw)');
+      } else {
+        pushJobLog(job.id, `Downloaded ${data.length} ${frame} candles`);
+        writeCandlesToDisk(job.asset, frame, data, range);
+        pushJobLog(job.id, `Saved ${frame} candles to data-cache`);
+      }
+
+      setJobProgress(job.id, Math.min(0.95, job.progress + perFrameProgress));
     }
 
-    const formattedCount = Number(ticks.length).toLocaleString('en-US');
-    pushJobLog(job.id, `Downloaded ${formattedCount} ticks`);
-    setJobProgress(job.id, 0.45);
-
-    persistRawTicks(job.asset, ticks, range);
-    pushJobLog(job.id, 'Persisted raw tick file (data/raw)');
-    setJobProgress(job.id, 0.6);
-
-    const candles = convertTicksToCandles(ticks, job.timeframe);
-    if (!candles.length) {
-      throw new Error('Unable to build OHLC candles from tick stream');
-    }
-
-    pushJobLog(job.id, `Converted ticks into ${candles.length} ${job.timeframe} candles`);
-    setJobProgress(job.id, 0.8);
-
-    writeCandlesToDisk(job.asset, job.timeframe, candles, range);
     pushJobLog(job.id, describeNormalization());
-    pushJobLog(job.id, 'Saving to data-cache');
     finalizeJob(job.id);
   } catch (error) {
     console.error('[dukascopy] job failed', error);
@@ -250,7 +249,7 @@ const executeJob = async (job) => {
   }
 };
 
-async function runDukascopyJob({ asset, timeframe, startDate, endDate }) {
+async function runDukascopyJob({ asset, timeframe }) {
   const jobId = uuid();
   const job = {
     id: jobId,
@@ -259,7 +258,7 @@ async function runDukascopyJob({ asset, timeframe, startDate, endDate }) {
     logs: [],
     asset,
     timeframe,
-    range: { startDate, endDate },
+    range: {},
   };
 
   jobs.set(jobId, job);

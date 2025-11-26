@@ -4,11 +4,11 @@ const { runDukascopyJob, ingestCustomFile, getJob } = require('../services/dukas
 const router = express.Router();
 
 router.post('/dukascopy', async (req, res) => {
-  const { asset, timeframe, startDate, endDate } = req.body || {};
+  const { asset, timeframe } = req.body || {};
   if (!asset || !timeframe) {
     return res.status(400).json({ error: 'asset and timeframe are required' });
   }
-  const job = await runDukascopyJob({ asset, timeframe, startDate, endDate });
+  const job = await runDukascopyJob({ asset, timeframe });
   res.status(202).json(job);
 });
 

@@ -1,16 +1,18 @@
 import React, { useEffect, useRef } from 'react';
 import {
+  CandlestickSeries,
   ColorType,
   CrosshairMode,
   IChartApi,
   ISeriesApi,
+  LineSeries,
   LineStyle,
   Time,
   UTCTimestamp,
   createChart,
 } from 'lightweight-charts';
 import type { SeriesMarker } from 'lightweight-charts';
-import { Candle, Trade } from '../types';
+import { Candle, Trade, ChartAppearance } from '../types';
 import { deriveMinBarSpacing, formatTickLabel, formatTooltipLabel, timeframeToMinutes, toTimestampSeconds } from '../utils/timeFormat';
 
 interface ChartProps {
@@ -20,6 +22,7 @@ interface ChartProps {
   lineColor?: string;
   timezone?: string;
   timeframe?: string;
+  appearance: ChartAppearance;
 }
 
 type CandlePoint = {
@@ -37,6 +40,7 @@ export const LightweightChart: React.FC<ChartProps> = ({
   lineColor = '#2962FF',
   timezone = 'UTC',
   timeframe,
+  appearance,
 }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -48,10 +52,14 @@ export const LightweightChart: React.FC<ChartProps> = ({
     if (!chartContainerRef.current) return;
 
     const chart = createChart(chartContainerRef.current, {
-      layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#0f172a' },
+      layout: {
+        background: { type: ColorType.Solid, color: appearance.backgroundColor },
+        textColor: appearance.scaleTextColor,
+        fontSize: appearance.scaleTextSize,
+      },
       grid: {
-        vertLines: { color: '#e2e8f0' },
-        horzLines: { color: '#f1f5f9' },
+        vertLines: { color: appearance.gridEnabled ? appearance.gridColor : '#ffffff00' },
+        horzLines: { color: appearance.gridEnabled ? appearance.gridColor : '#ffffff00' },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
@@ -82,15 +90,16 @@ export const LightweightChart: React.FC<ChartProps> = ({
       height: chartContainerRef.current.clientHeight || 400,
     });
 
-    const candleSeries = chart.addCandlestickSeries({
-      upColor: '#26a69a',
-      downColor: '#ef5350',
-      borderVisible: false,
-      wickUpColor: '#26a69a',
-      wickDownColor: '#ef5350',
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: appearance.candleUp.body,
+      downColor: appearance.candleDown.body,
+      borderUpColor: appearance.candleUp.border,
+      borderDownColor: appearance.candleDown.border,
+      wickUpColor: appearance.candleUp.wick,
+      wickDownColor: appearance.candleDown.wick,
       priceLineVisible: false,
     });
-    const trendSeries = chart.addLineSeries({
+    const trendSeries = chart.addSeries(LineSeries, {
       color: lineColor,
       lineWidth: 2,
       priceLineVisible: false,
@@ -147,6 +156,30 @@ export const LightweightChart: React.FC<ChartProps> = ({
     });
     lineSeriesRef.current?.applyOptions({ color: lineColor });
   }, [timeframe, timezone, lineColor]);
+
+  // Update appearance dynamically without remounting the chart
+  useEffect(() => {
+    if (!chartRef.current || !candleSeriesRef.current) return;
+    chartRef.current.applyOptions({
+      layout: {
+        background: { type: ColorType.Solid, color: appearance.backgroundColor },
+        textColor: appearance.scaleTextColor,
+        fontSize: appearance.scaleTextSize,
+      },
+      grid: {
+        vertLines: { color: appearance.gridEnabled ? appearance.gridColor : '#ffffff00' },
+        horzLines: { color: appearance.gridEnabled ? appearance.gridColor : '#ffffff00' },
+      },
+    });
+    candleSeriesRef.current.applyOptions({
+      upColor: appearance.candleUp.body,
+      downColor: appearance.candleDown.body,
+      borderUpColor: appearance.candleUp.border,
+      borderDownColor: appearance.candleDown.border,
+      wickUpColor: appearance.candleUp.wick,
+      wickDownColor: appearance.candleDown.wick,
+    });
+  }, [appearance]);
 
   // Update candle data when it changes
   useEffect(() => {

@@ -1,7 +1,7 @@
 import React from 'react';
 
 export const ApiDocsView: React.FC = () => (
-  <div className="max-w-4xl mx-auto bg-white border border-slate-200 p-10 shadow-sm min-h-[600px]">
+  <div className="max-w-6xl mx-auto bg-white border border-slate-200 p-10 shadow-sm min-h-[600px]">
     <div className="border-b border-slate-100 pb-6 mb-8">
       <h1 className="text-3xl font-light text-slate-900 mb-2">API Documentation</h1>
       <p className="text-slate-500">Reference for building Custom Chart Indicators and Strategies.</p>

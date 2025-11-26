@@ -20,6 +20,8 @@ import { ViewState } from './types';
 import { apiClient } from './services/api/client';
 import { applyGapQuantization } from './utils/gapQuantization';
 import { useStrategies } from './hooks/useStrategies';
+import { ToastProvider } from './components/common/Toast';
+import { useToast } from './components/common/Toast';
 
 const AppContent: React.FC = () => {
   const {
@@ -37,6 +39,8 @@ const AppContent: React.FC = () => {
     setChartTimezone,
     downloadedAssets,
     setDownloadedAssets,
+    chartAppearance,
+    setChartAppearance,
   } = useAppState();
   const { data, refreshData } = useMarketData(activeSymbol, activeTimeframe);
   const indicators = useIndicators(data);
@@ -49,6 +53,7 @@ const AppContent: React.FC = () => {
   const [startDate, setStartDate] = useState('Oldest Data Available');
   const [endDate, setEndDate] = useState('Present');
   const dataImport = useDataImport(importSymbol, importTimeframe);
+  const addToast = useToast();
   const repoStatus =
     dataImport.status === 'running'
       ? 'syncing'
@@ -118,6 +123,28 @@ const AppContent: React.FC = () => {
     setActiveView(ViewState.ANALYSIS);
   };
 
+  const handleDukascopyImport = async (range: { startDate?: string; endDate?: string; fullHistory?: boolean }) => {
+    try {
+      await dataImport.importDukascopy(range);
+      await refreshData();
+      addToast('Import started. Check logs for progress.', 'info');
+    } catch (error) {
+      addToast('Failed to start Dukascopy import.', 'error');
+      console.warn('[import] dukascopy failed', error);
+    }
+  };
+
+  const handleCustomImport = async () => {
+    try {
+      await dataImport.importCustom('user_data_import.csv');
+      await refreshData();
+      addToast('Custom import triggered. Check logs for progress.', 'info');
+    } catch (error) {
+      addToast('Failed to start custom import.', 'error');
+      console.warn('[import] custom failed', error);
+    }
+  };
+
   const gapAdjustedData = useMemo(
     () =>
       applyGapQuantization(data, {
@@ -147,6 +174,8 @@ const AppContent: React.FC = () => {
             onPinnedChange={setSelectedTimeframes}
             chartTimezone={chartTimezone}
             availableAssets={downloadedAssets}
+            chartAppearance={chartAppearance}
+            onAppearanceChange={setChartAppearance}
           />
         );
       case ViewState.CHART_INDICATOR:
@@ -173,14 +202,8 @@ const AppContent: React.FC = () => {
             endDate={endDate}
             setEndDate={setEndDate}
             importStatus={dataImport.status}
-            onDukascopyImport={async (range) => {
-              await dataImport.importDukascopy(range);
-              await refreshData();
-            }}
-            onCustomImport={async () => {
-              await dataImport.importCustom('user_data_import.csv');
-              await refreshData();
-            }}
+            onDukascopyImport={handleDukascopyImport}
+            onCustomImport={handleCustomImport}
             logs={dataImport.logs}
             progress={dataImport.progress}
             activeSymbol={importSymbol}
@@ -235,7 +258,7 @@ const AppContent: React.FC = () => {
           repoStatus={repoStatus}
           onRunBacktest={handleRunBacktest}
         />
-        <div className="flex-1 px-10 py-8 overflow-y-auto">{renderView()}</div>
+        <div className="flex-1 px-10 py-6 overflow-y-auto">{renderView()}</div>
       </main>
     </div>
   );
@@ -243,7 +266,9 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => (
   <AppStateProvider>
-    <AppContent />
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
   </AppStateProvider>
 );
 

@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Plus, CheckCircle2, Trash2, FileCode, Upload, Save, Code, RefreshCcw } from 'lucide-react';
 import { CustomIndicator } from '../types';
+import { useToast } from '../components/common/Toast';
+import { DEFAULT_INDICATOR_CODE } from '../utils/indicators';
 
 type IndicatorViewProps = {
   indicators: CustomIndicator[];
@@ -26,6 +28,79 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
   refreshFromDisk,
 }) => {
   const [isSaving, setIsSaving] = React.useState(false);
+  const codeOverlayRef = useRef<HTMLPreElement>(null);
+  const codeInputRef = useRef<HTMLTextAreaElement>(null);
+  const addToast = useToast();
+
+  const highlightPython = (code: string) => {
+    const safe = code || '';
+    const escape = (value: string) =>
+      value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const keywords = new Set([
+      'def',
+      'return',
+      'if',
+      'elif',
+      'else',
+      'for',
+      'while',
+      'import',
+      'from',
+      'as',
+      'pass',
+      'break',
+      'continue',
+      'class',
+      'with',
+      'yield',
+      'try',
+      'except',
+      'finally',
+      'raise',
+      'in',
+      'is',
+      'None',
+      'True',
+      'False',
+    ]);
+
+    const pattern =
+      /("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|#.*$|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b)/gm;
+
+    let result = '';
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = pattern.exec(safe)) !== null) {
+      const [token] = match;
+      result += escape(safe.slice(lastIndex, match.index));
+
+      if (token.startsWith('#')) {
+        result += `<span style="color:#334155">${escape(token)}</span>`;
+      } else if (token.startsWith('"') || token.startsWith("'")) {
+        result += `<span style="color:#0b3b82">${escape(token)}</span>`;
+      } else if (/^\d/.test(token)) {
+        result += `<span style="color:#0b2a4a">${escape(token)}</span>`;
+      } else if (keywords.has(token)) {
+        result += `<span style="color:#0f172a;font-weight:700">${escape(token)}</span>`;
+      } else {
+        result += escape(token);
+      }
+
+      lastIndex = match.index + token.length;
+    }
+
+    result += escape(safe.slice(lastIndex));
+    return result;
+  };
+
+  const syncScroll = () => {
+    if (codeOverlayRef.current && codeInputRef.current) {
+      codeOverlayRef.current.scrollTop = codeInputRef.current.scrollTop;
+      codeOverlayRef.current.scrollLeft = codeInputRef.current.scrollLeft;
+    }
+  };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -40,11 +115,23 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
     }
   };
 
+  const handleRefreshFromDisk = async () => {
+    if (!selectedIndicatorId) return;
+    try {
+      await refreshFromDisk(selectedIndicatorId);
+      addToast('Indicator reloaded from disk.', 'success');
+    } catch (error) {
+      addToast('Failed to reload indicator from disk.', 'error');
+      console.warn('[indicator] refreshFromDisk failed', error);
+    }
+  };
+
   const handleSave = async () => {
     if (!selectedIndicatorId || !activeIndicator) return;
     setIsSaving(true);
     try {
-      await saveIndicator(selectedIndicatorId, activeIndicator.code, activeIndicator.name);
+      await saveIndicator(selectedIndicatorId, activeIndicator.code || DEFAULT_INDICATOR_CODE, activeIndicator.name);
+      addToast('Indicator saved, applied to chart, and file updated.', 'success');
     } finally {
       setIsSaving(false);
     }
@@ -53,8 +140,8 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
   return (
     <div className="max-w-7xl mx-auto h-full flex gap-6">
       <div className="w-72 flex flex-col bg-white border border-slate-200 shadow-sm">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-          <span className="text-sm font-semibold text-slate-900">Indicators</span>
+        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+          <span className="text-sm font-semibold text-slate-900">Indicators Editor</span>
           <button
             onClick={createIndicator}
             className="p-1.5 bg-slate-50 hover:bg-slate-100 rounded border border-slate-200 text-slate-600 transition-colors"
@@ -133,7 +220,7 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
                   </label>
                   {activeIndicator.hasUpdate && (
                     <button
-                      onClick={() => refreshFromDisk(selectedIndicatorId)}
+                      onClick={handleRefreshFromDisk}
                       className="flex items-center gap-2 px-3 py-1.5 rounded text-[10px] font-semibold uppercase tracking-widest bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
                     >
                       <RefreshCcw size={12} /> Update Available
@@ -164,12 +251,27 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
               </div>
 
             <div className="flex-1 relative">
-              <textarea
-                value={activeIndicator.code}
-                onChange={(event) => saveIndicator(selectedIndicatorId, event.target.value)}
-                className="w-full h-full p-6 font-mono text-sm leading-relaxed text-slate-800 bg-white outline-none resize-none"
-                spellCheck={false}
-              />
+              {(() => {
+                const displayCode = activeIndicator.code || DEFAULT_INDICATOR_CODE;
+                return (
+                  <>
+                    <pre
+                      ref={codeOverlayRef}
+                      aria-hidden
+                      className="absolute inset-0 m-0 p-6 font-mono text-sm leading-relaxed text-slate-800 whitespace-pre-wrap overflow-auto pointer-events-none z-10"
+                      dangerouslySetInnerHTML={{ __html: highlightPython(displayCode) }}
+                    />
+                    <textarea
+                      ref={codeInputRef}
+                      value={displayCode}
+                      onChange={(event) => saveIndicator(selectedIndicatorId, event.target.value)}
+                      onScroll={syncScroll}
+                      className="absolute inset-0 w-full h-full p-6 font-mono text-sm leading-relaxed text-transparent caret-slate-900 bg-transparent outline-none resize-none overflow-auto selection:bg-slate-200 z-0"
+                      spellCheck={false}
+                    />
+                  </>
+                );
+              })()}
             </div>
           </>
         ) : (

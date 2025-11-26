@@ -7,10 +7,6 @@ import { SyncLogConsole } from '../components/panels/SyncLogConsole';
 type DataSourcesViewProps = {
   selectedMarket: string;
   setSelectedMarket: (value: string) => void;
-  startDate: string;
-  setStartDate: (value: string) => void;
-  endDate: string;
-  setEndDate: (value: string) => void;
   importStatus: 'idle' | 'running' | 'completed' | 'error';
   onDukascopyImport: (range: { startDate?: string; endDate?: string }) => Promise<void>;
   onCustomImport: () => Promise<void>;
@@ -24,10 +20,6 @@ type DataSourcesViewProps = {
 export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
   selectedMarket,
   setSelectedMarket,
-  startDate,
-  setStartDate,
-  endDate,
-  setEndDate,
   importStatus,
   onDukascopyImport,
   onCustomImport,
@@ -45,19 +37,8 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
     }
   };
 
-  const sanitizeDateInput = (value: string) => (/^\d{2}-\d{2}-\d{4}$/.test(value) ? value : undefined);
-
   const handleDukascopyImport = async () => {
-    const start = sanitizeDateInput(startDate);
-    const end = sanitizeDateInput(endDate);
-    const isOldest = startDate.trim().toLowerCase().startsWith('oldest');
-    const isPresent = endDate.trim().toLowerCase().startsWith('present');
-
-    await onDukascopyImport({
-      startDate: isOldest ? undefined : start,
-      endDate: isPresent ? undefined : end,
-      fullHistory: isOldest,
-    });
+    await onDukascopyImport({});
   };
 
   return (
@@ -109,17 +90,6 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
                       </option>
                     ))}
                   </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Date Range</label>
-                <div className="relative z-20 flex gap-2">
-                  <div className="w-1/2">
-                    <DatePickerInput value={startDate} onChange={setStartDate} placeholder="DD-MM-YYYY (Start)" />
-                  </div>
-                  <div className="w-1/2">
-                    <DatePickerInput value={endDate} onChange={setEndDate} placeholder="DD-MM-YYYY (End)" />
-                  </div>
                 </div>
               </div>
             </div>

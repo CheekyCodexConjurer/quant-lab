@@ -5,6 +5,7 @@ import { apiClient } from '../services/api/client';
 
 const APPLIED_VERSIONS_KEY = 'thelab.indicators.appliedVersions';
 const SELECTED_ID_KEY = 'thelab.indicators.selectedId';
+const NAMES_KEY = 'thelab.indicators.names';
 
 const loadAppliedVersions = (): Record<string, number> => {
   if (typeof window === 'undefined') return {};
@@ -47,11 +48,31 @@ const loadSelectedId = () => {
   }
 };
 
+const loadNames = (): Record<string, string> => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(NAMES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+const persistNames = (names: Record<string, string>) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(NAMES_KEY, JSON.stringify(names));
+  } catch {
+    /* ignore */
+  }
+};
+
 export const useIndicators = (data: Candle[]) => {
   const [indicators, setIndicators] = useState<CustomIndicator[]>([]);
   const [selectedIndicatorId, setSelectedIndicatorId] = useState<string | null>(loadSelectedId);
   const [indicatorData, setIndicatorData] = useState<{ time: string | number; value: number }[]>([]);
   const [appliedVersions, setAppliedVersions] = useState<Record<string, number>>(loadAppliedVersions);
+  const [nameOverrides, setNameOverrides] = useState<Record<string, string>>(loadNames);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -88,7 +109,7 @@ export const useIndicators = (data: Candle[]) => {
           const hasUpdate = appliedVersion ? item.lastModified > appliedVersion : false;
           return {
             id: item.id,
-            name: item.name || item.id,
+            name: nameOverrides[item.id] || item.name || item.id,
             code: '',
             filePath: item.filePath,
             lastModified: item.lastModified,
@@ -141,8 +162,19 @@ export const useIndicators = (data: Candle[]) => {
       try {
         const response = await apiClient.getIndicator(selectedIndicatorId);
         const item = response.item;
-        if (!item) return;
+        if (!item) {
+          // If API returns nothing, keep a visible default so the editor is usable.
+          setIndicators((prev) =>
+            prev.map((indicator) =>
+              indicator.id === selectedIndicatorId
+                ? { ...indicator, code: DEFAULT_INDICATOR_CODE, updatedAt: Date.now(), hasUpdate: false }
+                : indicator
+            )
+          );
+          return;
+        }
         const appliedVersion = item.lastModified;
+        const code = item.code || DEFAULT_INDICATOR_CODE;
         setAppliedVersions((prev) => {
           const updated = { ...prev, [selectedIndicatorId]: appliedVersion };
           persistAppliedVersions(updated);
@@ -154,8 +186,8 @@ export const useIndicators = (data: Candle[]) => {
             indicator.id === selectedIndicatorId
               ? {
                   ...indicator,
-                  code: item.code || '',
-                  name: item.name || indicator.name,
+                  code,
+                  name: nameOverrides[selectedIndicatorId] || item.name || indicator.name,
                   filePath: item.filePath,
                   lastModified: item.lastModified,
                   sizeBytes: item.sizeBytes,
@@ -167,7 +199,14 @@ export const useIndicators = (data: Candle[]) => {
           )
         );
       } catch {
-        /* ignore load errors */
+        // Fallback to default code on error so the editor is not blank.
+        setIndicators((prev) =>
+          prev.map((indicator) =>
+            indicator.id === selectedIndicatorId
+              ? { ...indicator, code: DEFAULT_INDICATOR_CODE, updatedAt: Date.now(), hasUpdate: false }
+              : indicator
+          )
+        );
       }
     };
 
@@ -204,6 +243,11 @@ export const useIndicators = (data: Candle[]) => {
     setIndicators((prev) => [...prev, newIndicator]);
     setSelectedIndicatorId(id);
     persistSelectedId(id);
+    setNameOverrides((prev) => {
+      const next = { ...prev, [id]: newIndicator.name };
+      persistNames(next);
+      return next;
+    });
   };
 
   const deleteIndicator = (id: string) => {
@@ -211,6 +255,13 @@ export const useIndicators = (data: Candle[]) => {
     setSelectedIndicatorId((current) => {
       const next = current === id ? null : current;
       persistSelectedId(next);
+      return next;
+    });
+    setNameOverrides((prev) => {
+      if (!prev[id]) return prev;
+      const next = { ...prev };
+      delete next[id];
+      persistNames(next);
       return next;
     });
   };
@@ -231,7 +282,7 @@ export const useIndicators = (data: Candle[]) => {
           ? {
               ...indicator,
               code,
-              name: name ?? indicator.name,
+              name: name || nameOverrides[id] || indicator.name,
               filePath: item?.filePath ?? indicator.filePath,
               lastModified: item?.lastModified ?? indicator.lastModified,
               sizeBytes: item?.sizeBytes ?? indicator.sizeBytes,
@@ -242,6 +293,13 @@ export const useIndicators = (data: Candle[]) => {
           : indicator
       )
     );
+    if (name) {
+      setNameOverrides((prev) => {
+        const next = { ...prev, [id]: name };
+        persistNames(next);
+        return next;
+      });
+    }
   };
 
   const toggleActiveIndicator = (id: string) => {
@@ -266,6 +324,7 @@ export const useIndicators = (data: Candle[]) => {
       const item = response.item;
       if (!item) return;
       const appliedVersion = item.lastModified;
+      const code = item.code || DEFAULT_INDICATOR_CODE;
       setAppliedVersions((prev) => {
         const updated = { ...prev, [id]: appliedVersion };
         persistAppliedVersions(updated);
@@ -276,8 +335,8 @@ export const useIndicators = (data: Candle[]) => {
           indicator.id === id
             ? {
                 ...indicator,
-                code: item.code || '',
-                name: item.name || indicator.name,
+                code,
+                name: nameOverrides[id] || item.name || indicator.name,
                 filePath: item.filePath,
                 lastModified: item.lastModified,
                 sizeBytes: item.sizeBytes,

@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Eye, EyeOff, Star, StarOff, X } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, Star, StarOff, X, Paintbrush } from 'lucide-react';
 import { LightweightChart } from '../components/LightweightChart';
 import { AVAILABLE_ASSETS } from '../constants/markets';
 import { TIMEFRAME_LIBRARY } from '../constants/timeframes';
-import { Candle, BacktestResult, CustomIndicator } from '../types';
+import { Candle, BacktestResult, CustomIndicator, ChartAppearance } from '../types';
+import { ChartStyleMenu } from '../components/chart/ChartStyleMenu';
+import { DEFAULT_APPEARANCE } from '../context/AppStateContext';
 
 type ChartViewProps = {
   data: Candle[];
@@ -22,6 +24,8 @@ type ChartViewProps = {
   onPinnedChange: (timeframes: string[]) => void;
   chartTimezone: string;
   availableAssets: string[];
+  chartAppearance: ChartAppearance;
+  onAppearanceChange: (appearance: Partial<ChartAppearance>) => void;
 };
 
 export const ChartView: React.FC<ChartViewProps> = ({
@@ -41,12 +45,15 @@ export const ChartView: React.FC<ChartViewProps> = ({
   onPinnedChange,
   chartTimezone,
   availableAssets,
+  chartAppearance,
+  onAppearanceChange,
 }) => {
   const hasVisibleIndicator = indicators.some((indicator) => indicator.isActive && indicator.isVisible);
   const [isMenuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const [menuPlacement, setMenuPlacement] = useState<'top' | 'bottom'>('top');
+  const [isStyleMenuOpen, setStyleMenuOpen] = useState(false);
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
@@ -192,6 +199,14 @@ export const ChartView: React.FC<ChartViewProps> = ({
             </div>
           )}
         </div>
+
+        <button
+          onClick={() => setStyleMenuOpen((prev) => !prev)}
+          className="ml-3 px-2.5 py-1.5 text-xs font-semibold text-slate-700 border border-slate-200 bg-white hover:border-slate-300 transition-colors rounded-sm flex items-center justify-center"
+          aria-label="Chart style"
+        >
+          <Paintbrush size={14} />
+        </button>
       </div>
 
       {indicators
@@ -201,7 +216,6 @@ export const ChartView: React.FC<ChartViewProps> = ({
             key={indicator.id}
             className="absolute top-[4.5rem] left-4 z-10 flex items-center gap-2 bg-white/90 backdrop-blur border border-slate-200 px-3 py-1 shadow-sm"
           >
-            <span className={`w-2 h-2 rounded-full ${indicator.isVisible ? 'bg-[#2962FF]' : 'bg-slate-300'}`} />
             <span className="text-xs font-medium text-slate-700">{indicator.name}</span>
             <button onClick={() => onToggleVisibility(indicator.id)} className="ml-2 text-slate-400 hover:text-slate-900">
               {indicator.isVisible ? <Eye size={12} /> : <EyeOff size={12} />}
@@ -220,9 +234,18 @@ export const ChartView: React.FC<ChartViewProps> = ({
           lineColor="#2962FF"
           timeframe={activeTimeframe}
           timezone={chartTimezone}
+          appearance={chartAppearance}
         />
-
       </div>
+
+      {isStyleMenuOpen && (
+        <ChartStyleMenu
+          appearance={chartAppearance}
+          onChange={onAppearanceChange}
+          onReset={() => onAppearanceChange(DEFAULT_APPEARANCE)}
+          onClose={() => setStyleMenuOpen(false)}
+        />
+      )}
     </div>
   );
 };

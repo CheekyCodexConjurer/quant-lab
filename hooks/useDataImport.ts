@@ -9,8 +9,9 @@ const formatLogs = (logs: JobLog[] = []) =>
   logs.map((log) => `[${log.timestamp || new Date().toISOString()}] ${log.message}`);
 
 const POLL_INTERVAL_MS = 1500;
+const IMPORT_TIMEFRAME = 'TICK';
 
-export const useDataImport = (asset: string, timeframe: string) => {
+export const useDataImport = (asset: string, _timeframe: string) => {
   const [status, setStatus] = useState<ImportStatus>('idle');
   const [logs, setLogs] = useState<string[]>([]);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -83,7 +84,7 @@ export const useDataImport = (asset: string, timeframe: string) => {
     setStatus('running');
     const payload = {
       asset: asset.toUpperCase(),
-      timeframe: timeframe.toUpperCase(),
+      timeframe: IMPORT_TIMEFRAME,
       ...range,
     };
     setLogs([

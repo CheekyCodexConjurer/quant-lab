@@ -60,7 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onChange }) => (
         <SidebarItem icon={<Database size={18} />} label="Data Sources" isActive={activeView === ViewState.DATA} onClick={() => onChange(ViewState.DATA)} />
         <SidebarItem
           icon={<Sliders size={18} />}
-          label="Data Normalization"
+          label="Data Settings"
           isActive={activeView === ViewState.DATA_NORMALIZATION}
           onClick={() => onChange(ViewState.DATA_NORMALIZATION)}
         />

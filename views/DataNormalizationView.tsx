@@ -3,6 +3,7 @@ import { Globe, Layers, Sliders, ChevronDown, Check } from 'lucide-react';
 import { TICK_PRESETS } from '../constants/markets';
 import { BasisType } from '../hooks/useNormalizationSettings';
 import { TIMEZONE_OPTIONS, getTimezoneById } from '../constants/timezones';
+import { useToast } from '../components/common/Toast';
 
 type DataNormalizationViewProps = {
   normTimezone: string;
@@ -15,7 +16,7 @@ type DataNormalizationViewProps = {
   isCustomTick: boolean;
   gapQuantEnabled: boolean;
   setGapQuantEnabled: (value: boolean) => void;
-  onSave: () => void;
+  onSave: () => Promise<void> | void;
   isSaving: boolean;
 };
 
@@ -35,6 +36,7 @@ export const DataNormalizationView: React.FC<DataNormalizationViewProps> = ({
 }) => {
   const [isTimezoneOpen, setTimezoneOpen] = useState(false);
   const timezoneRef = useRef<HTMLDivElement>(null);
+  const addToast = useToast();
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
@@ -51,10 +53,10 @@ export const DataNormalizationView: React.FC<DataNormalizationViewProps> = ({
   const selectedTimezone = getTimezoneById(normTimezone);
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-6xl mx-auto">
       <div className="mb-10">
-        <h3 className="text-lg font-medium text-slate-900">Data Normalization Rules</h3>
-        <p className="text-slate-500 text-sm mt-1">Define how raw tick data is processed and structured for the engine.</p>
+        <h3 className="text-lg font-medium text-slate-900">Data Settings</h3>
+        <p className="text-slate-500 text-sm mt-1">Configure how raw tick data is aligned, normalized, and discretized before feeding the engine.</p>
       </div>
 
       <div className="bg-white border border-slate-200 divide-y divide-slate-100 shadow-sm">
@@ -197,7 +199,15 @@ export const DataNormalizationView: React.FC<DataNormalizationViewProps> = ({
 
       <div className="mt-8 flex justify-end pr-4">
         <button
-          onClick={onSave}
+          onClick={async () => {
+            try {
+              await onSave();
+              addToast('Data settings saved.', 'success');
+            } catch (error) {
+              addToast('Failed to save data settings.', 'error');
+              console.warn('[normalization] save failed', error);
+            }
+          }}
           disabled={isSaving}
           className="px-8 py-3 bg-slate-900 text-white text-xs font-bold uppercase tracking-widest hover:bg-slate-800 transition-shadow shadow-lg shadow-slate-200 disabled:opacity-60"
         >
