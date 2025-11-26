@@ -5,13 +5,41 @@ const headers = {
 };
 
 export const apiClient = {
-  async importDukascopy(payload: { asset: string; timeframe: string; startDate?: string; endDate?: string; fullHistory?: boolean }) {
-    const res = await fetch(`${BASE_URL}/api/import/dukascopy`, {
+  async importDukascopy(payload: {
+    asset: string;
+    timeframe: string;
+    startDate?: string;
+    endDate?: string;
+    fullHistory?: boolean;
+    mode?: 'continue' | 'restart';
+  }) {
+    let res: Response;
+    try {
+      res = await fetch(`${BASE_URL}/api/import/dukascopy`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      const err = new Error(`Failed to reach backend (${BASE_URL}): ${(error as Error).message}`);
+      (err as any).isNetworkError = true;
+      throw err;
+    }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const message = body?.error || 'Failed to start Dukascopy import';
+      throw new Error(message);
+    }
+    return res.json();
+  },
+
+  async checkDukascopy(payload: { asset: string }) {
+    const res = await fetch(`${BASE_URL}/api/import/dukascopy/check`, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error('Failed to start Dukascopy import');
+    if (!res.ok) throw new Error('Failed to check Dukascopy dataset');
     return res.json();
   },
 
@@ -27,7 +55,30 @@ export const apiClient = {
 
   async getJob(jobId: string) {
     const res = await fetch(`${BASE_URL}/api/import/jobs/${jobId}`);
-    if (!res.ok) throw new Error('Job not found');
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      const message = errBody?.error || 'Job not found';
+      const bootId = errBody?.serverBootId;
+      const err = new Error(message) as Error & { serverBootId?: string };
+      if (bootId) (err as any).serverBootId = bootId;
+      throw err;
+    }
+    return res.json();
+  },
+
+  async cancelJob(jobId: string) {
+    const res = await fetch(`${BASE_URL}/api/import/jobs/${jobId}/cancel`, { method: 'POST' });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      const message = errBody?.error || 'Failed to cancel job';
+      throw new Error(message);
+    }
+    return res.json();
+  },
+
+  async health() {
+    const res = await fetch(`${BASE_URL}/health`);
+    if (!res.ok) throw new Error('Backend health check failed');
     return res.json();
   },
 
@@ -113,6 +164,46 @@ export const apiClient = {
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error('Failed to save strategy');
+    return res.json();
+  },
+
+  async runLeanBacktest(payload: {
+    asset: string;
+    timeframe: string;
+    code?: string;
+    startDate?: string;
+    endDate?: string;
+    cash?: number;
+    feeBps?: number;
+    slippageBps?: number;
+  }) {
+    const res = await fetch(`${BASE_URL}/api/lean/run`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error || 'Failed to start Lean backtest');
+    }
+    return res.json();
+  },
+
+  async getLeanJob(jobId: string) {
+    const res = await fetch(`${BASE_URL}/api/lean/jobs/${jobId}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error || 'Lean job not found');
+    }
+    return res.json();
+  },
+
+  async getLeanResults(jobId: string) {
+    const res = await fetch(`${BASE_URL}/api/lean/results/${jobId}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error || 'Lean results not available');
+    }
     return res.json();
   },
 };

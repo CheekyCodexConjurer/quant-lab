@@ -6,7 +6,7 @@ export const useBacktest = () => {
   const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
 
   const runSimulation = (data: Candle[]) => {
-    const result = runBacktest(data);
+    const result = { ...runBacktest(data), source: 'local' as const };
     setBacktestResult(result);
     return result;
   };
@@ -14,6 +14,7 @@ export const useBacktest = () => {
   return {
     backtestResult,
     runSimulation,
+    setExternalResult: (result: BacktestResult | null) => setBacktestResult(result),
     clearBacktest: () => setBacktestResult(null),
   };
 };

@@ -30,8 +30,25 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ backtestResult, acti
     );
   }
 
+  const sourceLabel = backtestResult.source === 'lean' ? 'Lean Engine' : 'Local Simulation';
+  const sourceTone =
+    backtestResult.source === 'lean'
+      ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
+      : 'bg-slate-100 text-slate-700 border-slate-200';
+
   return (
     <div className="max-w-6xl mx-auto space-y-8">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className={`text-[11px] font-semibold px-2 py-1 rounded-full border ${sourceTone}`}>{sourceLabel}</span>
+          {backtestResult.jobId ? (
+            <code className="text-[11px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded">Job {backtestResult.jobId}</code>
+          ) : null}
+        </div>
+        <button onClick={onRunBacktest} className="text-xs font-medium text-slate-700 hover:text-slate-900 underline underline-offset-4">
+          Run local simulation
+        </button>
+      </div>
       <div className="grid grid-cols-4 gap-6">
         <StatsCard label="Net Profit" value={`$${backtestResult.totalProfit.toFixed(2)}`} subValue="+12.5%" trend="up" />
         <StatsCard label="Win Rate" value={`${(backtestResult.winRate * 100).toFixed(1)}%`} subValue="+0.8%" trend="up" />

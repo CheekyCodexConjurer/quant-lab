@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 server/data
+server/lean_workspace
 
 # Editor directories and files
 .vscode/*

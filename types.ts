@@ -26,6 +26,9 @@ export interface BacktestResult {
   drawdown: number;
   trades: Trade[];
   equityCurve: { time: string | number; value: number }[];
+  source?: 'local' | 'lean';
+  jobId?: string;
+  rawStatistics?: Record<string, string | number>;
 }
 
 export interface CustomIndicator {
@@ -50,7 +53,8 @@ export enum ViewState {
   DATA_NORMALIZATION = 'DATA_NORMALIZATION',
   ANALYSIS = 'ANALYSIS',
   STRATEGY = 'STRATEGY',
-  API_DOCS = 'API_DOCS'
+  API_DOCS = 'API_DOCS',
+  REPOSITORY = 'REPOSITORY'
 }
 
 export interface StrategyFile {

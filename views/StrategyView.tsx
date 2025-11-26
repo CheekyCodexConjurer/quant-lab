@@ -1,17 +1,37 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Settings, Code, RefreshCcw, Save } from 'lucide-react';
+import { Settings, Code, RefreshCcw, Save, Play, Activity } from 'lucide-react';
 import { StrategyFile } from '../types';
 import { useToast } from '../components/common/Toast';
 
 type StrategyViewProps = {
   onRunBacktest: () => void;
+  onRunLeanBacktest: () => void;
   onNavigateToChart: () => void;
   activeStrategy: StrategyFile | null;
   onRefreshFromDisk: () => void;
   onSave: (code: string) => Promise<void> | void;
+  leanStatus: 'idle' | 'queued' | 'running' | 'completed' | 'error';
+  leanLogs: string[];
+  leanJobId: string | null;
+  leanError?: string | null;
+  leanParams: { cash: number; feeBps: number; slippageBps: number };
+  onLeanParamsChange: (next: { cash: number; feeBps: number; slippageBps: number }) => void;
 };
 
-export const StrategyView: React.FC<StrategyViewProps> = ({ onRunBacktest, onNavigateToChart, activeStrategy, onRefreshFromDisk, onSave }) => {
+export const StrategyView: React.FC<StrategyViewProps> = ({
+  onRunBacktest,
+  onRunLeanBacktest,
+  onNavigateToChart,
+  activeStrategy,
+  onRefreshFromDisk,
+  onSave,
+  leanStatus,
+  leanLogs,
+  leanJobId,
+  leanError,
+  leanParams,
+  onLeanParamsChange,
+}) => {
   const [codeDraft, setCodeDraft] = useState(activeStrategy?.code ?? '');
   const [isSaving, setIsSaving] = useState(false);
   const codeOverlayRef = useRef<HTMLPreElement>(null);
@@ -114,6 +134,47 @@ export const StrategyView: React.FC<StrategyViewProps> = ({ onRunBacktest, onNav
   };
 
   const hasUpdate = activeStrategy ? activeStrategy.lastModified > activeStrategy.appliedVersion : false;
+  const leanStatusTone =
+    leanStatus === 'running' || leanStatus === 'queued'
+      ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
+      : leanStatus === 'completed'
+        ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+        : leanStatus === 'error'
+          ? 'bg-rose-50 text-rose-700 border-rose-100'
+          : 'bg-slate-50 text-slate-600 border-slate-200';
+  const leanStatusLabel =
+    leanStatus === 'running'
+      ? 'Running'
+      : leanStatus === 'queued'
+        ? 'Queued'
+      : leanStatus === 'completed'
+        ? 'Done'
+        : leanStatus === 'error'
+          ? 'Error'
+          : 'Idle';
+  const leanDotColor =
+    leanStatus === 'running' || leanStatus === 'queued'
+      ? 'bg-indigo-500'
+      : leanStatus === 'completed'
+        ? 'bg-emerald-500'
+        : leanStatus === 'error'
+          ? 'bg-rose-500'
+          : 'bg-slate-400';
+
+  const updateParam = (key: 'cash' | 'feeBps' | 'slippageBps', value: number) => {
+    const next = { ...leanParams, [key]: value };
+    onLeanParamsChange(next);
+  };
+
+  const truncatePath = (value: string, max = 34) => {
+    if (!value) return '';
+    if (value.length <= max) return value;
+    const head = value.slice(0, Math.floor((max - 5) / 2));
+    const tail = value.slice(-Math.floor((max - 5) / 2));
+    return `${head}...${tail}`;
+  };
+
+  const entryPathDisplay = truncatePath(activeStrategy.filePath);
 
   if (!activeStrategy) {
     return (
@@ -127,26 +188,78 @@ export const StrategyView: React.FC<StrategyViewProps> = ({ onRunBacktest, onNav
 
   return (
     <div className="max-w-6xl mx-auto h-full bg-white border border-slate-200 flex flex-col shadow-sm">
-      <div className="flex items-center justify-between px-8 py-6 border-b border-slate-100 bg-slate-50/50">
-        <div>
-          <h3 className="text-lg font-medium text-slate-900">Strategy Configuration</h3>
-          <p className="text-slate-500 text-sm mt-1 flex items-center gap-2">
-            <span>Lean Engine entry point</span>
-            <span className="font-mono text-[11px] text-slate-700 bg-white border border-slate-200 px-2 py-1 rounded-sm">{activeStrategy.filePath}</span>
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {hasUpdate && (
-            <button
-              onClick={handleRefreshFromDisk}
-              className="flex items-center gap-2 px-3 py-1.5 rounded text-[10px] font-semibold uppercase tracking-widest bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
-            >
-              <RefreshCcw size={12} /> Update Available
+      <div className="px-8 py-4 border-b border-slate-200 bg-slate-50/80 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h3 className="text-lg font-semibold text-slate-900">Strategy Configuration</h3>
+            <p className="text-xs text-slate-500">Lean Engine settings</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {hasUpdate && (
+              <button
+                onClick={handleRefreshFromDisk}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-semibold uppercase tracking-widest bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
+              >
+                <RefreshCcw size={12} /> Update Available
+              </button>
+            )}
+            <span className={`flex items-center gap-2 px-2.5 py-1 rounded-full border ${leanStatusTone}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${leanDotColor}`} />
+              <span className="text-[10px] font-semibold">{leanStatusLabel}</span>
+            </span>
+            {leanJobId ? (
+              <code className="text-[11px] text-slate-600 bg-white border border-slate-200 px-2 py-1 rounded-sm">{leanJobId}</code>
+            ) : null}
+            <button className="h-8 w-8 flex items-center justify-center rounded-full border border-slate-200 text-slate-500 hover:text-slate-900 hover:border-slate-400 bg-white">
+              <Settings size={14} />
             </button>
-          )}
-          <button className="text-xs font-medium text-slate-500 hover:text-slate-900 flex items-center gap-1">
-            <Settings size={14} /> Settings
-          </button>
+          </div>
+        </div>
+
+        <div className="pt-1">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+            <label className="md:col-span-2 flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Engine Entry Point</span>
+              <div
+                className="w-full flex items-center gap-2 rounded-sm border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 font-mono truncate"
+                title={activeStrategy.filePath}
+              >
+                <Code size={12} className="text-slate-400 flex-shrink-0" />
+                <span className="truncate">{entryPathDisplay}</span>
+              </div>
+            </label>
+            <label className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Cash</span>
+              <input
+                type="number"
+                className="w-full px-3 py-1.5 border border-slate-200 rounded-sm bg-white text-sm text-right text-slate-800 font-mono focus:outline-none focus:border-slate-400 focus:shadow-[0_0_0_2px_rgba(15,23,42,0.08)]"
+                value={leanParams.cash}
+                onChange={(e) => updateParam('cash', Number(e.target.value || 0))}
+              />
+            </label>
+            <label className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Fee (bps)</span>
+              <input
+                type="number"
+                placeholder="0.5"
+                className="w-full px-3 py-1.5 border border-slate-200 rounded-sm bg-white text-sm text-right text-slate-800 font-mono focus:outline-none focus:border-slate-400 focus:shadow-[0_0_0_2px_rgba(15,23,42,0.08)]"
+                value={leanParams.feeBps}
+                step="0.1"
+                onChange={(e) => updateParam('feeBps', Number(e.target.value || 0))}
+              />
+            </label>
+            <label className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Slippage (bps)</span>
+              <input
+                type="number"
+                placeholder="1.0"
+                className="w-full px-3 py-1.5 border border-slate-200 rounded-sm bg-white text-sm text-right text-slate-800 font-mono focus:outline-none focus:border-slate-400 focus:shadow-[0_0_0_2px_rgba(15,23,42,0.08)]"
+                value={leanParams.slippageBps}
+                step="0.1"
+                onChange={(e) => updateParam('slippageBps', Number(e.target.value || 0))}
+              />
+            </label>
+          </div>
         </div>
       </div>
 
@@ -183,12 +296,36 @@ export const StrategyView: React.FC<StrategyViewProps> = ({ onRunBacktest, onNav
             >
               <Save size={14} /> {isSaving ? 'Saving...' : 'Save & Apply'}
             </button>
+            <button
+              onClick={onRunLeanBacktest}
+              disabled={leanStatus === 'running' || leanStatus === 'queued'}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-500 disabled:opacity-60"
+            >
+              <Play size={14} /> {leanStatus === 'running' || leanStatus === 'queued' ? 'Running on Lean...' : 'Run on Lean'}
+            </button>
             <button onClick={onRunBacktest} className="px-4 py-2 bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-500">
               Run Simulation
             </button>
           </div>
         </div>
       </div>
+      <div className="border border-t-0 border-slate-200 bg-white">
+        <div className="px-8 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Activity size={14} className="text-slate-500" />
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Lean Logs</span>
+          </div>
+          <div className="text-[11px] text-slate-500">
+            {leanStatusLabel}
+            {leanJobId ? ` | ${leanJobId}` : ''}
+          </div>
+        </div>
+        <pre className="h-32 overflow-y-auto custom-scrollbar text-xs text-slate-600 bg-slate-50 px-8 py-3 border-t border-slate-100">
+          {leanLogs && leanLogs.length ? leanLogs.slice(-200).join('\n') : 'No Lean logs yet. Start a Lean run to stream output.'}
+        </pre>
+      </div>
     </div>
   );
 };
+
+

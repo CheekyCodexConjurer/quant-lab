@@ -35,7 +35,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onChange }) => (
     <div className="p-8 pb-12">
       <div className="flex items-center gap-3">
         <div className="w-5 h-5 bg-slate-900 rounded-sm" />
-        <span className="font-semibold text-lg tracking-tight text-slate-900">The Lab</span>
+        <div className="flex flex-col leading-tight">
+          <span className="font-semibold text-lg tracking-tight text-slate-900">The Lab</span>
+          <span className="text-xs text-slate-500 tracking-tight">Quantitative Backtesting</span>
+        </div>
       </div>
     </div>
 
@@ -69,15 +72,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onChange }) => (
       <div className="pt-4 mt-4 border-t border-slate-100">
         <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">External</p>
         <SidebarItem icon={<BookOpen size={18} />} label="API Docs" isActive={activeView === ViewState.API_DOCS} onClick={() => onChange(ViewState.API_DOCS)} />
-        <a
-          href="https://github.com/CheekyCodexConjurer/trader-matthews-lean-lab"
-          target="_blank"
-          rel="noreferrer"
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-all duration-200"
-        >
-          <Github size={18} />
-          <span className="text-sm tracking-wide">Repository</span>
-        </a>
+        <SidebarItem
+          icon={<Github size={18} />}
+          label="Repository"
+          isActive={activeView === ViewState.REPOSITORY}
+          onClick={() => onChange(ViewState.REPOSITORY)}
+        />
       </div>
     </nav>
 

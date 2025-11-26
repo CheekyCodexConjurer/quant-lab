@@ -1,11 +1,13 @@
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+const { hydrateJobsFromDisk, serverBootId } = require('./services/dukascopyService');
 const importRoutes = require('./routes/importRoutes');
 const normalizationRoutes = require('./routes/normalizationRoutes');
 const dataRoutes = require('./routes/dataRoutes');
 const indicatorRoutes = require('./routes/indicatorRoutes');
 const strategyRoutes = require('./routes/strategyRoutes');
+const leanRoutes = require('./routes/leanRoutes');
 
 const PORT = process.env.SERVER_PORT || 4800;
 
@@ -20,7 +22,7 @@ app.use((req, res, next) => {
 app.use(morgan('dev'));
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime() });
+  res.json({ status: 'ok', uptime: process.uptime(), serverBootId });
 });
 
 app.use('/api/import', importRoutes);
@@ -28,6 +30,9 @@ app.use('/api/normalization', normalizationRoutes);
 app.use('/api/data', dataRoutes);
 app.use('/api/indicators', indicatorRoutes);
 app.use('/api/strategies', strategyRoutes);
+app.use('/api/lean', leanRoutes);
+
+hydrateJobsFromDisk();
 
 app.listen(PORT, () => {
   console.log(`[server] Listening on http://localhost:${PORT}`);

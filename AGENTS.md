@@ -4,9 +4,8 @@ Estas regras guiam o agente neste projeto **quant-lab**. Siga o fluxo discuss-th
 
 ## 1. Modelo e raciocinio
 - Modelo padrao: `gpt-5.1-codex-max`.
-- Nivel padrao: `medium`.
-- Use `high` quando houver multiplos modulos ou bugs complexos.
-- Use `extra_high` apenas para tarefas criticas ou quando o usuario pedir explicitamente.
+- Nivel padrao: `extra-high`.
+
 
 ## 2. Protocolo de bugs/problemas
 1) Investigacao: leia codigo, testes e logs. Consulte docs antes (README, front-end-architecture.md, back-end-architecture.md).  
@@ -53,8 +52,10 @@ Consuma a documentacao antes de inventar arquitetura nova.
 Em duvida, prefira responder e pedir confirmacao antes de editar.
 
 ## 9. Resumo Discuss-Then-Do
-1) Investigar e relatar sem editar.  
-2) Propor plano numerado.  
-3) Aguardar aprovacao.  
-4) Implementar com simplicidade e testes.  
-5) Documentar o que foi feito na resposta final.
+1. Investigue o problema e leia `README.md` / docs relevantes.
+2. Escreva um **relatório completo** explicando a causa provável.
+3. Monte um **plano de solução detalhado**, passo a passo, LLM-friendly, visando a economia de contexto, comentários objetivos e evitando arquivos muito grandes.
+4. Fazendo o design da arquitetura do código e organizando a nivel PHD o códigos e pastas.
+5. **Pare.** Não altere código até o usuário aprovar.
+6. Após aprovação, implemente seguindo o plano, com simplicidade e testes.
+7. Documente o que foi feito na resposta final (e em comentários/código, quando fizer sentido).

@@ -16,6 +16,7 @@ import { DataNormalizationView } from './views/DataNormalizationView';
 import { StrategyView } from './views/StrategyView';
 import { AnalysisView } from './views/AnalysisView';
 import { ApiDocsView } from './views/ApiDocsView';
+import { RepositoryView } from './views/RepositoryView';
 import { ViewState } from './types';
 import { apiClient } from './services/api/client';
 import { applyGapQuantization } from './utils/gapQuantization';
@@ -23,6 +24,7 @@ import { useStrategies } from './hooks/useStrategies';
 import { ToastProvider } from './components/common/Toast';
 import { useToast } from './components/common/Toast';
 import { useAvailableFrames } from './hooks/useAvailableFrames';
+import { useLeanBacktest } from './hooks/useLeanBacktest';
 
 const AppContent: React.FC = () => {
   const {
@@ -48,7 +50,11 @@ const AppContent: React.FC = () => {
   const strategies = useStrategies();
   const normalization = useNormalizationSettings(activeSymbol);
   const availableFrames = useAvailableFrames(activeSymbol);
-  const { backtestResult, runSimulation } = useBacktest();
+  const { backtestResult, runSimulation, setExternalResult } = useBacktest();
+  const leanBacktest = useLeanBacktest((result) => {
+    setExternalResult(result);
+    setActiveView(ViewState.ANALYSIS);
+  });
   const [importSymbol, setImportSymbol] = useState(activeSymbol);
   const [importTimeframe, setImportTimeframe] = useState(activeTimeframe);
   const [selectedMarket, setSelectedMarket] = useState('Energy Commodities');
@@ -63,7 +69,9 @@ const AppContent: React.FC = () => {
         ? 'synced'
         : dataImport.status === 'error'
           ? 'error'
-          : 'disconnected';
+          : dataImport.status === 'canceled'
+            ? 'disconnected'
+            : 'disconnected';
 
   useEffect(() => {
     if (dataImport.status === 'running') return;
@@ -132,9 +140,32 @@ const AppContent: React.FC = () => {
     setActiveView(ViewState.ANALYSIS);
   };
 
-  const handleDukascopyImport = async (range: { startDate?: string; endDate?: string; fullHistory?: boolean }) => {
+  const handleRunLeanBacktest = async () => {
+    if (!strategies.activeStrategy) {
+      addToast('No strategy loaded to run on Lean.', 'error');
+      return;
+    }
     try {
-      await dataImport.importDukascopy(range);
+      await leanBacktest.runLeanBacktest({
+        asset: activeSymbol,
+        timeframe: activeTimeframe,
+        code: strategies.activeStrategy.code,
+        cash: leanBacktest.params.cash,
+        feeBps: leanBacktest.params.feeBps,
+        slippageBps: leanBacktest.params.slippageBps,
+      });
+      addToast('Lean backtest started. Monitor logs for progress.', 'info');
+    } catch (error) {
+      addToast('Failed to start Lean backtest.', 'error');
+      console.warn('[lean] start failed', error);
+    }
+  };
+
+  const handleDukascopyImport = async (
+    range: { startDate?: string; endDate?: string; fullHistory?: boolean; mode?: 'continue' | 'restart' } = {}
+  ) => {
+    try {
+      await dataImport.importDukascopy(range, range.mode || 'restart');
       await refreshData();
       addToast('Import started. Check logs for progress.', 'info');
     } catch (error) {
@@ -213,8 +244,13 @@ const AppContent: React.FC = () => {
             importStatus={dataImport.status}
             onDukascopyImport={handleDukascopyImport}
             onCustomImport={handleCustomImport}
+            onCheckExisting={dataImport.checkExisting}
+            onClearLogs={dataImport.clearLogs}
+            onCancelImport={dataImport.cancel}
             logs={dataImport.logs}
             progress={dataImport.progress}
+            lastUpdated={dataImport.lastUpdated}
+            frameStatus={dataImport.frameStatus}
             activeSymbol={importSymbol}
             onSymbolChange={setImportSymbol}
             activeTimeframe={importTimeframe}
@@ -241,16 +277,25 @@ const AppContent: React.FC = () => {
         return (
           <StrategyView
             onRunBacktest={handleRunBacktest}
+            onRunLeanBacktest={handleRunLeanBacktest}
             onNavigateToChart={() => setActiveView(ViewState.CHART)}
             activeStrategy={strategies.activeStrategy}
             onRefreshFromDisk={() => strategies.selectedId && strategies.refreshFromDisk(strategies.selectedId)}
             onSave={(code) => strategies.selectedId && strategies.saveStrategy(strategies.selectedId, code)}
+            leanStatus={leanBacktest.status}
+            leanLogs={leanBacktest.logs}
+            leanJobId={leanBacktest.jobId}
+            leanError={leanBacktest.error}
+            leanParams={leanBacktest.params}
+            onLeanParamsChange={(next) => leanBacktest.setParams(next)}
           />
         );
       case ViewState.ANALYSIS:
         return <AnalysisView backtestResult={backtestResult} activeSymbol={activeSymbol} onRunBacktest={handleRunBacktest} />;
       case ViewState.API_DOCS:
         return <ApiDocsView />;
+      case ViewState.REPOSITORY:
+        return <RepositoryView />;
       default:
         return null;
     }
