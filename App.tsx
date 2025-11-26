@@ -22,6 +22,7 @@ import { applyGapQuantization } from './utils/gapQuantization';
 import { useStrategies } from './hooks/useStrategies';
 import { ToastProvider } from './components/common/Toast';
 import { useToast } from './components/common/Toast';
+import { useAvailableFrames } from './hooks/useAvailableFrames';
 
 const AppContent: React.FC = () => {
   const {
@@ -46,6 +47,7 @@ const AppContent: React.FC = () => {
   const indicators = useIndicators(data);
   const strategies = useStrategies();
   const normalization = useNormalizationSettings(activeSymbol);
+  const availableFrames = useAvailableFrames(activeSymbol);
   const { backtestResult, runSimulation } = useBacktest();
   const [importSymbol, setImportSymbol] = useState(activeSymbol);
   const [importTimeframe, setImportTimeframe] = useState(activeTimeframe);
@@ -93,7 +95,14 @@ const AppContent: React.FC = () => {
     };
   }, [activeSymbol, dataImport.status, setAvailableTimeframes]);
 
-  const symbolTimeframes = availableTimeframes[activeSymbol] ?? AVAILABLE_TIMEFRAMES;
+  const backendFrames = Object.keys(availableFrames.frames || {});
+  const symbolTimeframes =
+    (availableTimeframes[activeSymbol] && availableTimeframes[activeSymbol].length
+      ? availableTimeframes[activeSymbol]
+      : backendFrames.length
+        ? backendFrames.map((tf) => tf.toUpperCase())
+        : AVAILABLE_TIMEFRAMES) || AVAILABLE_TIMEFRAMES;
+
   const pinnedTimeframes = selectedTimeframes.filter((tf) => symbolTimeframes.includes(tf));
   const chartTimeframes = (pinnedTimeframes.length ? pinnedTimeframes : symbolTimeframes).slice();
   chartTimeframes.sort((a, b) => {

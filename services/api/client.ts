@@ -60,6 +60,12 @@ export const apiClient = {
     return res.json();
   },
 
+  async listTimeframes(asset: string) {
+    const res = await fetch(`${BASE_URL}/api/data/${asset}/timeframes`);
+    if (!res.ok) throw new Error('Failed to list timeframes');
+    return res.json();
+  },
+
   async fetchData(asset: string, timeframe: string) {
     const res = await fetch(`${BASE_URL}/api/data/${asset}/${timeframe}`);
     if (!res.ok) throw new Error('Dataset not available');

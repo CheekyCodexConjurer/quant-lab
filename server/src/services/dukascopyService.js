@@ -4,7 +4,9 @@ const path = require('path');
 const { getHistoricalRates } = require('dukascopy-node');
 const { describeNormalization } = require('./normalizationService');
 const { ASSET_SOURCES } = require('../constants/assets');
+const { frames: TARGET_FRAMES } = require('../constants/availableFrames');
 const EARLIEST = require('../constants/dukascopyEarliest');
+const { updateEntry } = require('./dataIndexService');
 
 const DATA_DIR = path.join(__dirname, '../../data');
 const RAW_DIR = path.join(DATA_DIR, 'raw');
@@ -180,6 +182,7 @@ const persistRawTicks = (asset, ticks, range) => {
       2
     )
   );
+  updateEntry(asset, 'tick', { start: range.fromIso, end: range.toIso }, minimal.length);
 };
 
 const writeCandlesToDisk = (asset, timeframe, candles, range) => {
@@ -192,6 +195,7 @@ const writeCandlesToDisk = (asset, timeframe, candles, range) => {
     candles,
   };
   fs.writeFileSync(path.join(DATA_DIR, filename), JSON.stringify(payload, null, 2));
+  updateEntry(asset, timeframe, { start: range.fromIso, end: range.toIso }, candles.length);
 };
 
 const executeJob = async (job) => {
