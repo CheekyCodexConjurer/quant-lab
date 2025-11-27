@@ -46,6 +46,15 @@ const persistAppliedVersion = (version: number) => {
   }
 };
 
+const normalizeFolder = (folderPath?: string) => {
+  const raw = String(folderPath || 'strategies')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '');
+  if (!raw) return 'strategies';
+  return raw.toLowerCase().startsWith('strategies') ? raw : `strategies/${raw}`;
+};
+
 export const useStrategies = () => {
   const [strategies, setStrategies] = useState<StrategyFile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(loadSelectedId);
@@ -111,7 +120,8 @@ export const useStrategies = () => {
   }, [selectedId]);
 
   const saveStrategy = async (id: string, code: string) => {
-    const response = await apiClient.saveStrategy(id, { code });
+    const strategy = strategies.find((s) => s.id === id);
+    const response = await apiClient.saveStrategy(id, { code, filePath: strategy?.filePath });
     const item = response.item;
     const version = item?.lastModified ?? Date.now();
     setAppliedVersion(version);
@@ -130,6 +140,116 @@ export const useStrategies = () => {
           : strategy
       )
     );
+  };
+
+  const createStrategy = async (folderPath?: string, nameOverride?: string, code: string = '') => {
+    const now = Date.now();
+    const baseName = nameOverride || 'New_Strategy';
+    const id = `${baseName}_${now}`;
+    const folder = normalizeFolder(folderPath);
+    const filePath = `${folder}/${baseName}.py`;
+    try {
+      const response = await apiClient.saveStrategy(id, { code, filePath });
+      const item = response.item;
+      const version = item?.lastModified ?? now;
+      const newStrategy: StrategyFile = {
+        id,
+        name: baseName,
+        code,
+        filePath: item?.filePath || filePath,
+        lastModified: item?.lastModified || now,
+        sizeBytes: item?.sizeBytes || code.length,
+        appliedVersion: version,
+      };
+      setStrategies((prev) => [...prev, newStrategy]);
+      setSelectedId(id);
+      persistSelectedId(id);
+      setAppliedVersion(version);
+      persistAppliedVersion(version);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const importStrategy = async (filePath: string, code: string) => {
+    const response = await apiClient.uploadStrategy({ code, filePath });
+    const item = response.item;
+    const id = item?.id || filePath;
+    const version = item?.lastModified || Date.now();
+    setStrategies((prev) => {
+      const exists = prev.find((s) => s.id === id);
+      if (exists) {
+        return prev.map((s) =>
+          s.id === id
+            ? { ...s, code, filePath: item?.filePath || filePath, lastModified: version, sizeBytes: code.length, appliedVersion: version }
+            : s
+        );
+      }
+      return [
+        ...prev,
+        {
+          id,
+          name: item?.name || filePath.split('/').pop() || id,
+          code,
+          filePath: item?.filePath || filePath,
+          lastModified: version,
+          sizeBytes: code.length,
+          appliedVersion: version,
+        },
+      ];
+    });
+    setSelectedId(id);
+    persistSelectedId(id);
+    setAppliedVersion(version);
+    persistAppliedVersion(version);
+  };
+
+  const deleteStrategy = async (id: string) => {
+    try {
+      await apiClient.deleteStrategy(id);
+    } catch {
+      /* ignore delete errors */
+    }
+    setStrategies((prev) => prev.filter((s) => s.id !== id));
+    setSelectedId((current) => {
+      if (current === id) {
+        const remaining = strategies.filter((s) => s.id !== id);
+        const next = remaining[0]?.id || null;
+        if (next) persistSelectedId(next);
+        else persistSelectedId(null);
+        return next;
+      }
+      return current;
+    });
+  };
+
+  const updateStrategyPath = async (id: string, nextPath: string) => {
+    const strategy = strategies.find((s) => s.id === id);
+    if (!strategy) return;
+    const code = strategy.code || '';
+    const response = await apiClient.saveStrategy(id, { code, filePath: nextPath });
+    const item = response.item;
+    const version = item?.lastModified || Date.now();
+    const newId = item?.id || id;
+    setStrategies((prev) =>
+      prev.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              id: newId,
+              code,
+              filePath: item?.filePath || nextPath,
+              lastModified: version,
+              sizeBytes: code.length,
+              appliedVersion: version,
+            }
+          : s
+      )
+    );
+    setSelectedId(newId);
+    persistSelectedId(newId);
+    setAppliedVersion(version);
+    persistAppliedVersion(version);
   };
 
   const refreshFromDisk = async (id: string) => {
@@ -174,5 +294,9 @@ export const useStrategies = () => {
     },
     saveStrategy,
     refreshFromDisk,
+    createStrategy,
+    importStrategy,
+    deleteStrategy,
+    updateStrategyPath,
   };
 };

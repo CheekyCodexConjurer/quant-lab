@@ -1,8 +1,7 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   CheckCircle2,
-  Trash2,
   FileCode,
   Upload,
   Save,
@@ -11,19 +10,22 @@ import {
   Folder,
   FileText,
   MoreHorizontal,
+  Copy,
 } from 'lucide-react';
 import { CustomIndicator } from '../types';
 import { useToast } from '../components/common/Toast';
 import { DEFAULT_INDICATOR_CODE } from '../utils/indicators';
+import { apiClient } from '../services/api/client';
+import { MainContent } from '../components/layout/MainContent';
 
 type IndicatorViewProps = {
   indicators: CustomIndicator[];
   selectedIndicatorId: string | null;
   setSelectedIndicatorId: (id: string | null) => void;
   activeIndicator: CustomIndicator | null;
-  createIndicator: () => void;
+  createIndicator: (folderPath?: string) => void;
   deleteIndicator: (id: string) => void;
-  saveIndicator: (id: string, code: string, name?: string) => Promise<void> | void;
+  saveIndicator: (id: string, code: string, name?: string, filePathOverride?: string) => Promise<void> | void;
   toggleActiveIndicator: (id: string) => void;
   refreshFromDisk: (id: string) => Promise<void> | void;
 };
@@ -46,6 +48,10 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
   const [newFolderDraft, setNewFolderDraft] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
+  const [menuPath, setMenuPath] = useState<string | null>(null);
+  const [selectedFolder, setSelectedFolder] = useState<string>('indicators');
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const codeOverlayRef = useRef<HTMLPreElement>(null);
   const codeInputRef = useRef<HTMLTextAreaElement>(null);
   const addToast = useToast();
@@ -120,19 +126,6 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
     }
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file && selectedIndicatorId) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        if (e.target?.result) {
-          saveIndicator(selectedIndicatorId, e.target.result as string);
-        }
-      };
-      reader.readAsText(file);
-    }
-  };
-
   const handleRefreshFromDisk = async () => {
     if (!selectedIndicatorId) return;
     try {
@@ -181,10 +174,26 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
     return relativeSegments.join('/');
   };
 
+  const normalizeFolder = (folder?: string) => {
+    const rel = toRepoRelative(folder || 'indicators');
+    if (!rel) return 'indicators';
+    return rel.toLowerCase().startsWith('indicators') ? rel : `indicators/${rel}`;
+  };
+
   const deriveFilePath = (indicator: CustomIndicator) => {
     const base = pathOverrides[indicator.id] || indicator.filePath || `${indicator.name || indicator.id}.py`;
     const rel = toRepoRelative(base || `${indicator.id}.py`);
     return rel || `${indicator.id}.py`;
+  };
+
+  const absolutePathFor = (indicator: CustomIndicator) => indicator.filePath || deriveFilePath(indicator);
+
+  const truncateMiddle = (value: string, max = 40) => {
+    if (!value) return '';
+    if (value.length <= max) return value;
+    const head = value.slice(0, Math.floor(max / 2) - 2);
+    const tail = value.slice(value.length - Math.ceil(max / 2) + 2);
+    return `${head}...${tail}`;
   };
 
   const buildTree = useMemo(() => {
@@ -336,13 +345,16 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
       const isOpen = expanded[node.path || 'root'] ?? true;
       const isActive = isFile && selectedIndicatorId === node.indicatorId;
       const indent = depth * 12;
-      const onRowKeyDown = (event: React.KeyboardEvent) => {
+      const indicatorForNode = isFile && node.indicatorId ? indicators.find((i) => i.id === node.indicatorId) : null;
+      const fullPathForNode = indicatorForNode ? absolutePathFor(indicatorForNode) : node.path;
+          const onRowKeyDown = (event: React.KeyboardEvent) => {
         if (event.key === 'Enter') {
           event.preventDefault();
           if (isFile && node.indicatorId) {
             setSelectedIndicatorId(node.indicatorId);
           } else if (!isFile) {
             toggleExpand(node.path);
+            setSelectedFolder(node.path || 'indicators');
           }
         }
         if (event.key === 'F2') {
@@ -382,7 +394,7 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
               handleDrop(e, node);
               setDragOverPath(null);
             }}
-            className={`group flex items-center justify-between cursor-pointer px-3 py-1.5 text-xs ${
+            className={`group flex items-center justify-between cursor-pointer px-3 py-1.5 text-sm ${
               isActive ? 'bg-slate-50 border-l-2 border-l-slate-900' : 'hover:bg-slate-50/70 border-l-2 border-l-transparent'
             } ${dragOverPath === node.path ? 'ring-1 ring-slate-300' : ''}`}
             style={{ paddingLeft: 12 + indent }}
@@ -391,6 +403,7 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
                 setSelectedIndicatorId(node.indicatorId);
               } else if (!isFile) {
                 toggleExpand(node.path);
+                setSelectedFolder(node.path || 'indicators');
               }
             }}
           >
@@ -413,54 +426,93 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
                       setRenaming(null);
                     }
                   }}
-                  className="text-xs bg-white border border-slate-300 rounded px-1 py-0.5 text-slate-800"
+                  className="text-sm bg-white border border-slate-300 rounded px-1 py-0.5 text-slate-800"
                 />
               ) : (
                 <span className={`truncate ${isActive ? 'text-slate-900 font-semibold' : 'text-slate-700'}`}>{node.name}</span>
               )}
             </div>
             <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
-              {isFile && node.indicatorId ? (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleActiveIndicator(node.indicatorId!);
-                  }}
-                  className={`p-1 rounded ${indicators.find((i) => i.id === node.indicatorId && i.isActive) ? 'text-emerald-500' : 'text-slate-400 hover:text-slate-700'}`}
-                  title="Toggle active"
-                >
-                  <CheckCircle2 size={14} />
-                </button>
-              ) : null}
+            {isFile && node.indicatorId ? (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  setRenaming(node.path);
+                  toggleActiveIndicator(node.indicatorId!);
                 }}
-                className="p-1 rounded text-slate-400 hover:text-slate-700"
-                title="Rename"
+                className={`h-7 w-7 flex items-center justify-center rounded ${
+                  indicators.find((i) => i.id === node.indicatorId && i.isActive)
+                    ? 'text-emerald-500'
+                    : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'
+                }`}
+                title="Toggle active"
               >
-                <MoreHorizontal size={14} />
-              </button>
-              {isFile ? (
+                  <CheckCircle2 size={14} />
+                </button>
+              ) : null}
+              <div className="relative" ref={menuPath === node.path ? menuRef : undefined}>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (node.indicatorId) deleteIndicator(node.indicatorId);
+                    setMenuPath((prev) => (prev === node.path ? null : node.path));
                   }}
-                  className="p-1 rounded text-rose-400 hover:text-rose-600"
-                  title="Delete"
+                  className="h-7 w-7 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-50"
+                  title="More"
+                  aria-haspopup="true"
+                  aria-expanded={menuPath === node.path}
                 >
-                  <Trash2 size={12} />
+                  <MoreHorizontal size={14} />
                 </button>
-              ) : null}
+                {menuPath === node.path && (
+                  <div className="absolute right-0 mt-1 w-40 bg-white border border-slate-200 rounded-sm shadow-sm z-20 text-xs text-slate-700">
+                    <button
+                      className="w-full text-left px-3 py-2 hover:bg-slate-50"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRenaming(node.path);
+                        setMenuPath(null);
+                      }}
+                    >
+                      Rename
+                    </button>
+                    <button
+                      className="w-full text-left px-3 py-2 hover:bg-slate-50"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                    if (fullPathForNode) {
+                      navigator.clipboard.writeText(fullPathForNode);
+                      addToast('Full path copied', 'info');
+                    }
+                    setMenuPath(null);
+                  }}
+                >
+                      Copy full path
+                    </button>
+                    <div className="h-px bg-slate-100" />
+                    <button
+                      className="w-full text-left px-3 py-2 hover:bg-slate-50 text-rose-500"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (node.indicatorId && window.confirm('Delete this file?')) {
+                          deleteIndicator(node.indicatorId);
+                          if (selectedIndicatorId === node.indicatorId) {
+                            setSelectedIndicatorId(null);
+                          }
+                        }
+                        setMenuPath(null);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           {node.type === 'folder' && isOpen && node.children?.length ? (
             <div className="flex flex-col">{renderTree(node.children, depth + 1)}</div>
           ) : null}
           {node.type === 'folder' && isOpen && newFolderDraft !== null && depth === 0 && node.path === '' ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 text-xs" style={{ paddingLeft: 12 + 12 }}>
+            <div className="flex items-center gap-2 px-3 py-1.5 text-sm" style={{ paddingLeft: 12 + 12 }}>
               <Folder size={14} className="text-slate-500" />
               <input
                 autoFocus
@@ -471,7 +523,7 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
                   if (e.key === 'Enter') handleNewFolderConfirm();
                   if (e.key === 'Escape') setNewFolderDraft(null);
                 }}
-                className="text-xs bg-white border border-slate-300 rounded px-1 py-0.5 text-slate-800"
+                className="text-sm bg-white border border-slate-300 rounded px-1 py-0.5 text-slate-800"
                 placeholder="folder-name"
               />
             </div>
@@ -480,26 +532,77 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
       );
     });
 
-  const displayFilePath = activeIndicator
+  const hasActiveIndicator = Boolean(selectedIndicatorId && activeIndicator);
+
+  const displayFilePath = hasActiveIndicator && activeIndicator
     ? activeIndicator.filePath || deriveFilePath(activeIndicator)
     : '';
+  const entryPathDisplay = displayFilePath ? truncateMiddle(displayFilePath, 42) : 'Select a file...';
+  const isIndicatorActive = hasActiveIndicator && activeIndicator ? activeIndicator.isActive : false;
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuPath(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  const handleImport = () => {
+    importInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const content = (e.target?.result as string) || '';
+      const baseName = file.name.endsWith('.py') ? file.name : `${file.name}.py`;
+      const folder = selectedFolder && selectedFolder.trim().length ? selectedFolder : 'indicators';
+      let destPath = `${folder.replace(/\\/g, '/').replace(/\/+$/, '')}/${baseName}`;
+      const exists = indicators.some((ind) => toRepoRelative(ind.filePath).toLowerCase() === destPath.toLowerCase());
+      if (exists) {
+        const overwrite = window.confirm('File exists. Overwrite? Cancel to save with suffix.');
+        if (!overwrite) {
+          const suffix = `_${Math.floor(Date.now() / 1000)}`;
+          destPath = destPath.replace(/\.py$/, `${suffix}.py`);
+        }
+      }
+      try {
+        const response = await apiClient.uploadIndicator({ code: content, filePath: destPath });
+        const item = response.item;
+        const newId = item?.id || destPath;
+        setExpanded((prev) => ({ ...prev, [folder || 'root']: true }));
+        setSelectedIndicatorId(newId);
+        await refreshFromDisk(newId);
+      } catch (err) {
+        addToast('Failed to import file', 'error');
+      } finally {
+        if (importInputRef.current) importInputRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
 
   return (
-    <div className="max-w-7xl mx-auto h-full flex gap-6">
-      <div className="w-72 flex flex-col bg-white border border-slate-200 shadow-sm">
+    <MainContent direction="row" className="gap-6 items-stretch h-full">
+      <div className="w-72 h-full min-h-0 flex flex-col bg-white border border-slate-200 shadow-sm">
         <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
           <span className="text-sm font-semibold text-slate-900">Repository</span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setNewFolderDraft('')}
-              className="p-1.5 bg-white hover:bg-slate-50 rounded border border-slate-200 text-slate-600 transition-colors"
+              className="h-8 w-8 flex items-center justify-center bg-white hover:bg-slate-50 rounded border border-slate-200 text-slate-600 transition-colors"
               title="New folder"
             >
               <Folder size={14} />
             </button>
             <button
-              onClick={createIndicator}
-              className="p-1.5 bg-white hover:bg-slate-50 rounded border border-slate-200 text-slate-600 transition-colors"
+              onClick={() => createIndicator(selectedFolder)}
+              className="h-8 w-8 flex items-center justify-center bg-white hover:bg-slate-50 rounded border border-slate-200 text-slate-600 transition-colors"
               title="New file"
             >
               <Plus size={14} />
@@ -510,10 +613,10 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
           {buildTree.root.children && buildTree.root.children.length ? (
             renderTree(buildTree.root.children)
           ) : (
-            <div className="px-4 py-3 text-xs text-slate-500">No files yet.</div>
+            <div className="px-4 py-3 text-sm text-slate-500">No files yet.</div>
           )}
           {newFolderDraft !== null && buildTree.root.children && buildTree.root.children.length === 0 ? (
-            <div className="flex items-center gap-2 px-4 py-1.5 text-xs">
+            <div className="flex items-center gap-2 px-4 py-1.5 text-sm">
               <Folder size={14} className="text-slate-500" />
               <input
                 autoFocus
@@ -524,7 +627,7 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
                   if (e.key === 'Enter') handleNewFolderConfirm();
                   if (e.key === 'Escape') setNewFolderDraft(null);
                 }}
-                className="text-xs bg-white border border-slate-300 rounded px-1 py-0.5 text-slate-800"
+                className="text-sm bg-white border border-slate-300 rounded px-2 py-1 text-slate-800"
                 placeholder="folder-name"
               />
             </div>
@@ -532,65 +635,93 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 bg-white border border-slate-200 flex flex-col shadow-sm relative">
-        {selectedIndicatorId && activeIndicator ? (
-          <>
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <FileCode size={16} className="text-slate-400" />
-                    <input
-                      type="text"
-                      value={activeIndicator.name}
-                      onChange={(event) => saveIndicator(selectedIndicatorId, activeIndicator.code, event.target.value)}
-                      className="bg-transparent border-b border-transparent hover:border-slate-300 focus:border-slate-400 text-sm font-semibold text-slate-900 outline-none w-48 transition-colors"
-                    />
-                  </div>
-                  {displayFilePath && (
-                    <span className="px-2 py-1 text-[10px] font-mono text-slate-500 bg-white border border-slate-200 rounded-sm">
-                      {displayFilePath}
-                    </span>
-                  )}
-                  <div className="h-4 w-px bg-slate-200" />
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-900 transition-colors">
-                    <Upload size={14} />
-                    Import
-                    <input type="file" accept=".py,.txt" className="hidden" onChange={handleFileUpload} />
-                  </label>
-                  {activeIndicator.hasUpdate && (
-                    <button
-                      onClick={handleRefreshFromDisk}
-                      className="flex items-center gap-2 px-3 py-1.5 rounded text-[10px] font-semibold uppercase tracking-widest bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
-                    >
-                      <RefreshCcw size={12} /> Update Available
-                    </button>
-                  )}
-                </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => toggleActiveIndicator(selectedIndicatorId)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
-                    activeIndicator.isActive
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    {activeIndicator.isActive ? <CheckCircle2 size={14} /> : <div className="w-3.5 h-3.5 rounded-full border border-slate-300" />}
-                    {activeIndicator.isActive ? 'Active on Chart' : 'Add to Chart'}
-                  </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={isSaving}
-                    className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-xs font-bold uppercase rounded-sm hover:bg-slate-800 disabled:opacity-60"
-                  >
-                    <Save size={14} /> {isSaving ? 'Saving...' : 'Save & Apply'}
-                  </button>
-                </div>
+      <div className="flex-1 flex flex-col min-h-0">
+        <div className="w-full h-full bg-white border border-slate-200 flex flex-col shadow-sm flex-1 relative min-h-0">
+          <div className="flex items-center justify-between px-6 py-3 border-b border-slate-100 bg-slate-50/50">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <FileCode size={16} className="text-slate-400" />
+                <input
+                  type="text"
+                  value={hasActiveIndicator && activeIndicator ? activeIndicator.name : ''}
+                  placeholder="Select a file..."
+                  disabled={!hasActiveIndicator}
+                  onChange={(event) => {
+                    if (hasActiveIndicator && selectedIndicatorId && activeIndicator) {
+                      saveIndicator(selectedIndicatorId, activeIndicator.code, event.target.value);
+                    }
+                  }}
+                  className="bg-transparent border-b border-transparent hover:border-slate-300 focus:border-slate-400 text-sm font-semibold text-slate-900 outline-none w-48 transition-colors py-0.5 disabled:text-slate-400 disabled:cursor-not-allowed"
+                />
               </div>
+              <span
+                className="px-2.5 py-1 text-[10px] font-mono text-slate-500 bg-white border border-slate-200 rounded-sm flex items-center gap-1"
+                title={displayFilePath || undefined}
+              >
+                <span className={`${displayFilePath ? '' : 'text-slate-400'}`}>{entryPathDisplay}</span>
+                <button
+                  onClick={() => {
+                    if (displayFilePath) {
+                      navigator.clipboard.writeText(displayFilePath);
+                      addToast('Path copied', 'info');
+                    }
+                  }}
+                  disabled={!displayFilePath}
+                  className="p-0.5 rounded text-slate-400 hover:text-slate-700 disabled:opacity-40"
+                  title="Copy full path"
+                >
+                  <Copy size={12} />
+                </button>
+              </span>
+              <div className="h-4 w-px bg-slate-200" />
+              <button
+                onClick={handleImport}
+                className="h-8 px-3 flex items-center gap-2 cursor-pointer text-[11px] font-semibold text-slate-600 hover:text-slate-900 transition-colors rounded-sm border border-slate-200 bg-white"
+              >
+                <Upload size={12} />
+                Import
+              </button>
+              <input ref={importInputRef} type="file" accept=".py,.txt" className="hidden" onChange={handleImportFile} />
+              {hasActiveIndicator && activeIndicator?.hasUpdate && (
+                <button
+                  onClick={handleRefreshFromDisk}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded text-[10px] font-semibold uppercase tracking-widest bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
+                >
+                  <RefreshCcw size={12} /> Update Available
+                </button>
+              )}
+            </div>
 
-            <div className="flex-1 relative">
-              {(() => {
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  if (hasActiveIndicator && selectedIndicatorId) {
+                    toggleActiveIndicator(selectedIndicatorId);
+                  }
+                }}
+                disabled={!hasActiveIndicator}
+                className={`h-9 px-3 flex items-center gap-2 rounded-full text-[10px] font-semibold border transition-colors ${
+                  isIndicatorActive
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                } disabled:opacity-60`}
+              >
+                {isIndicatorActive ? <CheckCircle2 size={12} /> : <div className="w-3 h-3 rounded-full border border-slate-300" />}
+                {isIndicatorActive ? 'Active' : 'Add to Chart'}
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={isSaving || !hasActiveIndicator}
+                className="h-9 px-3 flex items-center gap-2 text-[11px] font-semibold rounded-sm border border-slate-200 text-slate-600 bg-white hover:text-slate-900 hover:bg-slate-50 disabled:opacity-60"
+              >
+                <Save size={12} /> {isSaving ? 'Saving...' : 'Save & Apply'}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 relative min-h-0">
+            {hasActiveIndicator && activeIndicator ? (
+              (() => {
                 const displayCode = activeIndicator.code || DEFAULT_INDICATOR_CODE;
                 return (
                   <>
@@ -603,23 +734,23 @@ export const IndicatorView: React.FC<IndicatorViewProps> = ({
                     <textarea
                       ref={codeInputRef}
                       value={displayCode}
-                      onChange={(event) => saveIndicator(selectedIndicatorId, event.target.value)}
+                      onChange={(event) => saveIndicator(selectedIndicatorId!, event.target.value)}
                       onScroll={syncScroll}
                       className="absolute inset-0 w-full h-full p-6 font-mono text-sm leading-relaxed text-transparent caret-slate-900 bg-transparent outline-none resize-none overflow-auto selection:bg-slate-200 z-0"
                       spellCheck={false}
                     />
                   </>
                 );
-              })()}
-            </div>
-          </>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
-            <Code size={48} className="mb-4 opacity-20" />
-            <p className="text-sm font-medium">Select an indicator to edit or create a new one.</p>
+              })()
+            ) : (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
+                <Code size={48} className="mb-4 opacity-20" />
+                <p className="text-sm font-medium">Select an indicator to edit or create a new one.</p>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
-    </div>
+    </MainContent>
   );
 };

@@ -24,21 +24,33 @@ const ensureDir = () => {
   }
 };
 
-const normalizeId = (value) => {
-  const clean = String(value || '')
-    .replace(/[^a-zA-Z0-9_-]/g, '')
-    .trim();
-  return clean || 'strategy';
-};
-
 const prettifyName = (id) => id.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-const toMeta = (filePath) => {
+const normalizeRelativePath = (value) => {
+  const normalized = path.normalize(String(value || '')).replace(/\\/g, '/');
+  const trimmed = normalized.replace(/^(\.\.\/)+/, '').replace(/^\//, '').replace(/\/+$/, '');
+  return trimmed;
+};
+
+const encodeId = (relativePath) => normalizeRelativePath(relativePath).replace(/\//g, '__') || 'strategy';
+const decodeId = (id) => normalizeRelativePath(String(id || '').replace(/__+/g, '/'));
+
+const ensureDirFor = (relativePath) => {
+  const rel = normalizeRelativePath(relativePath);
+  const fullDir = path.join(STRATEGIES_DIR, path.dirname(rel));
+  if (!fs.existsSync(fullDir)) {
+    fs.mkdirSync(fullDir, { recursive: true });
+  }
+  return fullDir;
+};
+
+const toMeta = (filePath, relPath) => {
   const stat = fs.statSync(filePath);
-  const id = path.basename(filePath, path.extname(filePath));
+  const id = encodeId(relPath);
+  const name = path.basename(relPath, path.extname(relPath));
   return {
     id,
-    name: prettifyName(id),
+    name: prettifyName(name),
     filePath,
     lastModified: stat.mtimeMs,
     sizeBytes: stat.size,
@@ -47,30 +59,43 @@ const toMeta = (filePath) => {
 
 const listStrategies = () => {
   ensureDir();
-  return fs
-    .readdirSync(STRATEGIES_DIR)
-    .filter((file) => file.endsWith('.py'))
-    .map((file) => toMeta(path.join(STRATEGIES_DIR, file)));
+  const results = [];
+  const walk = (dir) => {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries.forEach((entry) => {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.py')) {
+        const relPath = path.relative(STRATEGIES_DIR, fullPath).replace(/\\/g, '/');
+        results.push(toMeta(fullPath, relPath));
+      }
+    });
+  };
+  walk(STRATEGIES_DIR);
+  return results;
 };
 
 const readStrategy = (id) => {
   ensureDir();
-  const safeId = normalizeId(id);
-  const filePath = path.join(STRATEGIES_DIR, `${safeId}.py`);
+  const relPath = decodeId(id);
+  const filePath = path.join(STRATEGIES_DIR, relPath.endsWith('.py') ? relPath : `${relPath}.py`);
   if (!fs.existsSync(filePath)) {
     return null;
   }
-  const meta = toMeta(filePath);
+  const meta = toMeta(filePath, path.relative(STRATEGIES_DIR, filePath).replace(/\\/g, '/'));
   const code = fs.readFileSync(filePath, 'utf-8');
   return { ...meta, code };
 };
 
-const writeStrategy = (id, code) => {
+const writeStrategy = (id, code, filePathOverride) => {
   ensureDir();
-  const safeId = normalizeId(id);
-  const filePath = path.join(STRATEGIES_DIR, `${safeId}.py`);
-  fs.writeFileSync(filePath, code ?? '', 'utf-8');
-  return readStrategy(safeId);
+  const relPathRaw = filePathOverride ? normalizeRelativePath(filePathOverride) : decodeId(id);
+  const relPath = relPathRaw.endsWith('.py') ? relPathRaw : `${relPathRaw}.py`;
+  ensureDirFor(relPath);
+  const fullPath = path.join(STRATEGIES_DIR, relPath);
+  fs.writeFileSync(fullPath, code ?? '', 'utf-8');
+  return readStrategy(encodeId(relPath));
 };
 
 const ensureSeed = () => {
@@ -81,9 +106,23 @@ const ensureSeed = () => {
   fs.writeFileSync(seedPath, DEFAULT_STRATEGY_CODE, 'utf-8');
 };
 
+const deleteStrategy = (id) => {
+  ensureDir();
+  const relPath = decodeId(id);
+  const filePath = path.join(STRATEGIES_DIR, relPath.endsWith('.py') ? relPath : `${relPath}.py`);
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+    return true;
+  }
+  return false;
+};
+
 module.exports = {
+  encodeId,
+  decodeId,
   listStrategies,
   readStrategy,
   writeStrategy,
   ensureSeed,
+  deleteStrategy,
 };

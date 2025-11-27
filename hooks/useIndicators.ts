@@ -67,6 +67,26 @@ const persistNames = (names: Record<string, string>) => {
   }
 };
 
+const normalizeFolder = (folderPath?: string) => {
+  const raw = String(folderPath || 'indicators')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '');
+  if (!raw) return 'indicators';
+  return raw.toLowerCase().startsWith('indicators') ? raw : `indicators/${raw}`;
+};
+
+const toIndicatorRelativePath = (filePath?: string | null) => {
+  if (!filePath) return undefined;
+  const normalized = String(filePath).replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+  const segments = normalized.split('/').filter(Boolean);
+  if (segments.length === 0) return undefined;
+  const rootIndex = segments.findIndex((seg) => seg.toLowerCase() === 'indicators');
+  const relSegments = rootIndex >= 0 ? segments.slice(rootIndex + 1) : segments;
+  const relPath = relSegments.join('/');
+  return relPath || undefined;
+};
+
 export const useIndicators = (data: Candle[]) => {
   const [indicators, setIndicators] = useState<CustomIndicator[]>([]);
   const [selectedIndicatorId, setSelectedIndicatorId] = useState<string | null>(loadSelectedId);
@@ -223,16 +243,19 @@ export const useIndicators = (data: Candle[]) => {
     }
   }, [data, indicators]);
 
-  const createIndicator = () => {
+  const createIndicator = (folderPath?: string) => {
     const now = Date.now();
-    const id = now.toString();
+    const baseName = 'New_Indicator';
+    const id = `${baseName}_${now}`;
+    const normalizedFolder = normalizeFolder(folderPath);
+    const filePath = `${normalizedFolder}/${baseName}.py`;
     const newIndicator: CustomIndicator = {
       id,
       name: 'New Indicator',
-      code: NEW_INDICATOR_TEMPLATE,
-      filePath: '',
+      code: '',
+      filePath,
       lastModified: now,
-      sizeBytes: 0,
+      sizeBytes: NEW_INDICATOR_TEMPLATE.length,
       isActive: false,
       isVisible: true,
       appliedVersion: 0,
@@ -247,6 +270,10 @@ export const useIndicators = (data: Candle[]) => {
       const next = { ...prev, [id]: newIndicator.name };
       persistNames(next);
       return next;
+    });
+    // Persist the new file immediately
+    saveIndicator(id, newIndicator.code, newIndicator.name, filePath).catch(() => {
+      /* ignore initial save errors */
     });
   };
 
@@ -266,8 +293,11 @@ export const useIndicators = (data: Candle[]) => {
     });
   };
 
-  const saveIndicator = async (id: string, code: string, name?: string) => {
-    const response = await apiClient.saveIndicator(id, { code });
+  const saveIndicator = async (id: string, code: string, name?: string, filePathOverride?: string) => {
+    const currentIndicator = indicators.find((indicator) => indicator.id === id);
+    const resolvedPath = toIndicatorRelativePath(filePathOverride || currentIndicator?.filePath);
+    const payload = resolvedPath ? { code, filePath: resolvedPath } : { code };
+    const response = await apiClient.saveIndicator(id, payload);
     const item = response.item;
     const appliedVersion = item?.lastModified ?? Date.now();
     setAppliedVersions((prev) => {
@@ -283,7 +313,7 @@ export const useIndicators = (data: Candle[]) => {
               ...indicator,
               code,
               name: name || nameOverrides[id] || indicator.name,
-              filePath: item?.filePath ?? indicator.filePath,
+              filePath: item?.filePath ?? indicator.filePath ?? filePathOverride,
               lastModified: item?.lastModified ?? indicator.lastModified,
               sizeBytes: item?.sizeBytes ?? indicator.sizeBytes,
               updatedAt: Date.now(),

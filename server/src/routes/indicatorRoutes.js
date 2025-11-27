@@ -1,5 +1,5 @@
 const express = require('express');
-const { listIndicators, readIndicator, writeIndicator, ensureSeed } = require('../services/indicatorFileService');
+const { listIndicators, readIndicator, writeIndicator, ensureSeed, encodeId } = require('../services/indicatorFileService');
 
 const router = express.Router();
 
@@ -20,8 +20,20 @@ router.get('/:id', (req, res) => {
 
 router.post('/:id', (req, res) => {
   ensureSeed();
-  const { code } = req.body || {};
-  const item = writeIndicator(req.params.id, code || '');
+  const { code, filePath } = req.body || {};
+  const item = writeIndicator(req.params.id, code || '', filePath);
+  res.json({ item });
+});
+
+// convenience route for uploads with arbitrary paths
+router.post('/', (req, res) => {
+  ensureSeed();
+  const { code, filePath } = req.body || {};
+  if (!filePath) {
+    return res.status(400).json({ error: 'filePath is required' });
+  }
+  const id = encodeId(filePath);
+  const item = writeIndicator(id, code || '', filePath);
   res.json({ item });
 });
 

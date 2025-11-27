@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AppStateProvider, useAppState } from './context/AppStateContext';
 import { Sidebar } from './components/layout/Sidebar';
 import { MainHeader } from './components/layout/MainHeader';
-import { useMarketData } from './hooks/useMarketData';
+import { useIncrementalMarketData } from './hooks/useIncrementalMarketData';
 import { useIndicators } from './hooks/useIndicators';
 import { useBacktest } from './hooks/useBacktest';
 import { useDataImport } from './hooks/useDataImport';
@@ -45,8 +45,16 @@ const AppContent: React.FC = () => {
     chartAppearance,
     setChartAppearance,
   } = useAppState();
-  const { data, refreshData } = useMarketData(activeSymbol, activeTimeframe);
-  const indicators = useIndicators(data);
+  const marketData = useIncrementalMarketData();
+  const {
+    data: candles,
+    loading: marketLoading,
+    ingesting: marketIngesting,
+    error: marketError,
+    loadData,
+    cancelCurrentLoad,
+  } = marketData;
+  const indicators = useIndicators(candles);
   const strategies = useStrategies();
   const normalization = useNormalizationSettings(activeSymbol);
   const availableFrames = useAvailableFrames(activeSymbol);
@@ -86,10 +94,16 @@ const AppContent: React.FC = () => {
       try {
         const datasets = await apiClient.listDatasets();
         if (cancelled) return;
-        const normalizedAssets = datasets.map((dataset: { asset: string }) => dataset.asset);
+        const normalizedDatasets = (datasets || []).map((dataset: { asset: string; timeframes?: string[] }) => ({
+          asset: String(dataset.asset || '').toUpperCase(),
+          timeframes: Array.isArray(dataset.timeframes)
+            ? Array.from(new Set(dataset.timeframes.map((tf) => String(tf).toUpperCase())))
+            : [],
+        }));
+        const normalizedAssets = normalizedDatasets.filter((item) => item.asset).map((item) => item.asset);
         setDownloadedAssets(normalizedAssets);
-        datasets.forEach((dataset: { asset: string; timeframes?: string[] }) => {
-          if (dataset.timeframes?.length) {
+        normalizedDatasets.forEach((dataset) => {
+          if (dataset.asset && dataset.timeframes.length) {
             setAvailableTimeframes(dataset.asset, dataset.timeframes);
           }
         });
@@ -101,14 +115,14 @@ const AppContent: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [activeSymbol, dataImport.status, setAvailableTimeframes]);
+  }, [dataImport.status, setAvailableTimeframes, setDownloadedAssets]);
 
-  const backendFrames = Object.keys(availableFrames.frames || {});
+  const backendFrames = availableFrames.frames || [];
   const symbolTimeframes =
     (availableTimeframes[activeSymbol] && availableTimeframes[activeSymbol].length
       ? availableTimeframes[activeSymbol]
       : backendFrames.length
-        ? backendFrames.map((tf) => tf.toUpperCase())
+        ? backendFrames
         : AVAILABLE_TIMEFRAMES) || AVAILABLE_TIMEFRAMES;
 
   const pinnedTimeframes = selectedTimeframes.filter((tf) => symbolTimeframes.includes(tf));
@@ -135,8 +149,13 @@ const AppContent: React.FC = () => {
     setChartTimezone(normalization.normTimezone);
   }, [normalization.normTimezone, setChartTimezone]);
 
+  useEffect(() => {
+    loadData({ asset: activeSymbol, timeframe: activeTimeframe });
+    return () => cancelCurrentLoad();
+  }, [activeSymbol, activeTimeframe, loadData, cancelCurrentLoad]);
+
   const handleRunBacktest = () => {
-    runSimulation(data);
+    runSimulation(candles);
     setActiveView(ViewState.ANALYSIS);
   };
 
@@ -166,7 +185,7 @@ const AppContent: React.FC = () => {
   ) => {
     try {
       await dataImport.importDukascopy(range, range.mode || 'restart');
-      await refreshData();
+      await loadData({ asset: activeSymbol, timeframe: activeTimeframe });
       addToast('Import started. Check logs for progress.', 'info');
     } catch (error) {
       addToast('Failed to start Dukascopy import.', 'error');
@@ -177,7 +196,7 @@ const AppContent: React.FC = () => {
   const handleCustomImport = async () => {
     try {
       await dataImport.importCustom('user_data_import.csv');
-      await refreshData();
+      await loadData({ asset: activeSymbol, timeframe: activeTimeframe });
       addToast('Custom import triggered. Check logs for progress.', 'info');
     } catch (error) {
       addToast('Failed to start custom import.', 'error');
@@ -187,10 +206,10 @@ const AppContent: React.FC = () => {
 
   const gapAdjustedData = useMemo(
     () =>
-      applyGapQuantization(data, {
+      applyGapQuantization(candles, {
         enabled: normalization.gapQuantEnabled,
       }),
-    [data, normalization.gapQuantEnabled]
+    [candles, normalization.gapQuantEnabled]
   );
 
   const renderView = () => {
@@ -216,6 +235,10 @@ const AppContent: React.FC = () => {
             availableAssets={downloadedAssets}
             chartAppearance={chartAppearance}
             onAppearanceChange={setChartAppearance}
+            loading={marketLoading}
+            ingesting={marketIngesting}
+            error={marketError}
+            onCancelLoad={cancelCurrentLoad}
           />
         );
       case ViewState.CHART_INDICATOR:
@@ -276,10 +299,17 @@ const AppContent: React.FC = () => {
       case ViewState.STRATEGY:
         return (
           <StrategyView
-            onRunBacktest={handleRunBacktest}
             onRunLeanBacktest={handleRunLeanBacktest}
             onNavigateToChart={() => setActiveView(ViewState.CHART)}
+            strategies={strategies.strategies}
+            selectedStrategyId={strategies.selectedId}
+            setSelectedStrategyId={strategies.setSelectedId}
             activeStrategy={strategies.activeStrategy}
+            createStrategy={strategies.createStrategy}
+            importStrategy={strategies.importStrategy}
+            deleteStrategy={strategies.deleteStrategy}
+            refreshFromDisk={(id) => strategies.refreshFromDisk(id)}
+            saveStrategy={(id, code) => strategies.saveStrategy(id, code)}
             onRefreshFromDisk={() => strategies.selectedId && strategies.refreshFromDisk(strategies.selectedId)}
             onSave={(code) => strategies.selectedId && strategies.saveStrategy(strategies.selectedId, code)}
             leanStatus={leanBacktest.status}
@@ -304,7 +334,7 @@ const AppContent: React.FC = () => {
   return (
     <div className="flex h-screen bg-[#fafafa] text-slate-900 font-sans">
       <Sidebar activeView={activeView} onChange={setActiveView} />
-      <main className="flex-1 flex flex-col relative overflow-hidden bg-[#fafafa]">
+      <main className="flex-1 flex flex-col relative overflow-hidden bg-[#fafafa] min-h-0">
         <MainHeader
           activeView={activeView}
           activeSymbol={activeSymbol}
@@ -312,7 +342,9 @@ const AppContent: React.FC = () => {
           repoStatus={repoStatus}
           onRunBacktest={handleRunBacktest}
         />
-        <div className="flex-1 px-10 py-6 overflow-y-auto">{renderView()}</div>
+        <div className="flex-1 px-10 py-8 overflow-y-auto min-h-0">
+          <div className="h-full flex">{renderView()}</div>
+        </div>
       </main>
     </div>
   );

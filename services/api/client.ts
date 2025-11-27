@@ -111,8 +111,17 @@ export const apiClient = {
     return res.json();
   },
 
+  async fetchDataText(asset: string, timeframe: string, options: { signal?: AbortSignal } = {}) {
+    const res = await fetch(`${BASE_URL}/api/data/${asset}/${timeframe}`, {
+      signal: options.signal,
+    });
+    if (!res.ok) throw new Error('Dataset not available');
+    return res.text();
+  },
+
   async listTimeframes(asset: string) {
-    const res = await fetch(`${BASE_URL}/api/data/${asset}/timeframes`);
+    const normalized = String(asset || '').toLowerCase();
+    const res = await fetch(`${BASE_URL}/api/data/${normalized}/timeframes`);
     if (!res.ok) throw new Error('Failed to list timeframes');
     return res.json();
   },
@@ -135,8 +144,18 @@ export const apiClient = {
     return res.json();
   },
 
-  async saveIndicator(id: string, payload: { code: string }) {
+  async saveIndicator(id: string, payload: { code: string; filePath?: string }) {
     const res = await fetch(`${BASE_URL}/api/indicators/${id}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Failed to save indicator');
+    return res.json();
+  },
+
+  async uploadIndicator(payload: { code: string; filePath: string }) {
+    const res = await fetch(`${BASE_URL}/api/indicators`, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
@@ -157,13 +176,31 @@ export const apiClient = {
     return res.json();
   },
 
-  async saveStrategy(id: string, payload: { code: string }) {
+  async saveStrategy(id: string, payload: { code: string; filePath?: string }) {
     const res = await fetch(`${BASE_URL}/api/strategies/${id}`, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error('Failed to save strategy');
+    return res.json();
+  },
+
+  async uploadStrategy(payload: { code: string; filePath: string }) {
+    const res = await fetch(`${BASE_URL}/api/strategies`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Failed to save strategy');
+    return res.json();
+  },
+
+  async deleteStrategy(id: string) {
+    const res = await fetch(`${BASE_URL}/api/strategies/${id}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to delete strategy');
     return res.json();
   },
 

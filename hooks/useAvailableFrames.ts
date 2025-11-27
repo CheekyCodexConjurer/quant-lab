@@ -1,14 +1,8 @@
 import { useEffect, useState } from 'react';
 import { apiClient } from '../services/api/client';
 
-export type FrameMeta = {
-  range: { start: string; end: string };
-  count: number;
-  updatedAt: number;
-};
-
 export const useAvailableFrames = (asset: string) => {
-  const [frames, setFrames] = useState<Record<string, FrameMeta>>({});
+  const [frames, setFrames] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,10 +15,12 @@ export const useAvailableFrames = (asset: string) => {
       try {
         const res = await apiClient.listTimeframes(asset);
         if (cancelled) return;
-        setFrames(res.timeframes || {});
+        const listed = Array.isArray(res?.timeframes) ? res.timeframes : Object.keys(res?.timeframes || {});
+        const normalized = Array.from(new Set(listed.map((tf) => String(tf).toUpperCase())));
+        setFrames(normalized);
       } catch (err) {
         if (!cancelled) {
-          setFrames({});
+          setFrames([]);
           setError((err as Error).message);
         }
       } finally {
@@ -39,4 +35,3 @@ export const useAvailableFrames = (asset: string) => {
 
   return { frames, isLoading, error };
 };
-

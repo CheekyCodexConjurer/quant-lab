@@ -84,8 +84,8 @@ const loadAppearance = (): ChartAppearance => {
 
 export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   const [activeView, setActiveView] = useState<ViewState>(ViewState.CHART);
-  const [activeSymbol, setActiveSymbol] = useState('CL1!');
-  const [activeTimeframe, setActiveTimeframe] = useState('H1');
+  const [activeSymbol, setActiveSymbolState] = useState('CL1!');
+  const [activeTimeframe, setActiveTimeframeState] = useState('H1');
 
   const [availableTimeframes, setAvailableTimeframesInternal] = useState<Record<string, string[]>>(() =>
     AVAILABLE_ASSETS.reduce((acc, asset) => {
@@ -106,7 +106,7 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     try {
       const stored = window.localStorage.getItem(DATASETS_STORAGE_KEY);
       const parsed = stored ? JSON.parse(stored) : [];
-      if (Array.isArray(parsed)) return Array.from(new Set(parsed.map(String)));
+      if (Array.isArray(parsed)) return Array.from(new Set(parsed.map((asset: string) => String(asset).toUpperCase())));
     } catch {
       /* ignore */
     }
@@ -148,10 +148,11 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   }, [chartAppearance]);
 
   const setAvailableTimeframes = (asset: string, frames: string[]) => {
+    const normalizedAsset = String(asset || '').toUpperCase();
     const normalized = Array.from(new Set(frames.map((tf) => String(tf).toUpperCase())));
     setAvailableTimeframesInternal((prev) => ({
       ...prev,
-      [asset]: normalized.length ? normalized : [...AVAILABLE_TIMEFRAMES],
+      [normalizedAsset]: normalized.length ? normalized : [...AVAILABLE_TIMEFRAMES],
     }));
   };
 
@@ -165,8 +166,16 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const setDownloadedAssets = (assets: string[]) => {
-    const normalized = Array.from(new Set(assets.map((asset) => String(asset))));
+    const normalized = Array.from(new Set(assets.map((asset) => String(asset || '').toUpperCase())));
     setDownloadedAssetsState(normalized);
+  };
+
+  const setActiveSymbol = (symbol: string) => {
+    setActiveSymbolState(String(symbol || '').toUpperCase());
+  };
+
+  const setActiveTimeframe = (timeframe: string) => {
+    setActiveTimeframeState(String(timeframe || '').toUpperCase());
   };
 
   const setChartAppearance = (appearance: Partial<ChartAppearance>) => {
@@ -187,21 +196,21 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
         setActiveSymbol,
         activeTimeframe,
         setActiveTimeframe,
-      availableTimeframes,
-      setAvailableTimeframes,
-      selectedTimeframes,
-      setSelectedTimeframes,
-      chartTimezone,
-      setChartTimezone,
-      downloadedAssets,
-      setDownloadedAssets,
-      chartAppearance,
-      setChartAppearance,
-    }}
-  >
-    {children}
-  </AppStateContext.Provider>
-);
+        availableTimeframes,
+        setAvailableTimeframes,
+        selectedTimeframes,
+        setSelectedTimeframes,
+        chartTimezone,
+        setChartTimezone,
+        downloadedAssets,
+        setDownloadedAssets,
+        chartAppearance,
+        setChartAppearance,
+      }}
+    >
+      {children}
+    </AppStateContext.Provider>
+  );
 };
 
 export const useAppState = () => {

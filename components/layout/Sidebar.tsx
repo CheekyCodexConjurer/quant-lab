@@ -45,18 +45,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onChange }) => (
     <nav className="flex-1 px-6 space-y-1 overflow-y-auto custom-scrollbar">
       <SidebarItem icon={<LayoutGrid size={18} />} label="Overview" isActive={activeView === ViewState.ANALYSIS} onClick={() => onChange(ViewState.ANALYSIS)} />
       <SidebarItem icon={<BarChart2 size={18} />} label="Chart" isActive={activeView === ViewState.CHART} onClick={() => onChange(ViewState.CHART)} />
-      <SidebarItem
-        icon={<Code size={18} />}
-        label="Chart Indicator"
-        isActive={activeView === ViewState.CHART_INDICATOR}
-        onClick={() => onChange(ViewState.CHART_INDICATOR)}
-      />
-      <SidebarItem
-        icon={<Code size={18} />}
-        label="Lean Strategy"
-        isActive={activeView === ViewState.STRATEGY}
-        onClick={() => onChange(ViewState.STRATEGY)}
-      />
+
+      <div className="pt-4 mt-4 border-t border-slate-100">
+        <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Coding</p>
+        <SidebarItem
+          icon={<Code size={18} />}
+          label="Chart Indicator"
+          isActive={activeView === ViewState.CHART_INDICATOR}
+          onClick={() => onChange(ViewState.CHART_INDICATOR)}
+        />
+        <SidebarItem
+          icon={<Code size={18} />}
+          label="Lean Strategy"
+          isActive={activeView === ViewState.STRATEGY}
+          onClick={() => onChange(ViewState.STRATEGY)}
+        />
+      </div>
 
       <div className="pt-4 mt-4 border-t border-slate-100">
         <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Data</p>

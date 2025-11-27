@@ -9,6 +9,9 @@ import { DEFAULT_APPEARANCE } from '../context/AppStateContext';
 
 type ChartViewProps = {
   data: Candle[];
+  loading?: boolean;
+  ingesting?: boolean;
+  error?: string | null;
   backtestResult: BacktestResult | null;
   indicators: CustomIndicator[];
   indicatorData: { time: string | number; value: number }[];
@@ -26,6 +29,7 @@ type ChartViewProps = {
   availableAssets: string[];
   chartAppearance: ChartAppearance;
   onAppearanceChange: (appearance: Partial<ChartAppearance>) => void;
+  onCancelLoad?: () => void;
 };
 
 export const ChartView: React.FC<ChartViewProps> = ({
@@ -47,6 +51,10 @@ export const ChartView: React.FC<ChartViewProps> = ({
   availableAssets,
   chartAppearance,
   onAppearanceChange,
+  loading = false,
+  ingesting = false,
+  error = null,
+  onCancelLoad,
 }) => {
   const hasVisibleIndicator = indicators.some((indicator) => indicator.isActive && indicator.isVisible);
   const [isMenuOpen, setMenuOpen] = useState(false);
@@ -103,7 +111,26 @@ export const ChartView: React.FC<ChartViewProps> = ({
   const isTimeframeAvailable = (code: string) => allTimeframes.includes(code);
 
   return (
-    <div className="h-full flex flex-col bg-white border border-slate-200 p-1 shadow-sm relative">
+    <div className="h-full min-h-[720px] min-w-0 flex-1 w-full flex flex-col bg-white border border-slate-200 p-1 shadow-sm relative">
+      {(loading || ingesting) && (
+        <div className="absolute top-4 right-4 z-20 bg-white/90 backdrop-blur border border-slate-200 text-[11px] font-semibold text-slate-600 px-3 py-1.5 rounded-sm shadow-sm flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+          <span>{ingesting ? 'Loading data...' : 'Fetching data...'}</span>
+          {onCancelLoad ? (
+            <button
+              onClick={onCancelLoad}
+              className="ml-2 px-2 py-0.5 text-[10px] font-semibold text-slate-600 border border-slate-200 rounded-sm hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+          ) : null}
+        </div>
+      )}
+      {error ? (
+        <div className="absolute top-16 right-4 z-20 bg-rose-50 border border-rose-200 text-[11px] text-rose-700 px-3 py-1.5 rounded-sm shadow-sm">
+          {error}
+        </div>
+      ) : null}
       <div className="absolute top-4 left-4 z-20 flex gap-2 items-center">
         <div className="relative group">
           <select
@@ -226,7 +253,7 @@ export const ChartView: React.FC<ChartViewProps> = ({
           </div>
         ))}
 
-      <div className="flex-1 relative">
+      <div className="flex-1 relative min-h-[640px]">
         <LightweightChart
           data={data}
           trades={backtestResult?.trades}
