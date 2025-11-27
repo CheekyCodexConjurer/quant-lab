@@ -12,18 +12,41 @@ function ensureDataDir() {
 function listAssets() {
   ensureDataDir();
   const files = fs.readdirSync(DATA_DIR).filter((file) => file.endsWith('.json'));
-  const assets = files.map((file) => {
-    const [asset, timeframe] = file.replace('.json', '').split('-');
-    return { asset, timeframe };
-  });
   const metadata = {};
-  assets.forEach(({ asset, timeframe }) => {
-    if (!metadata[asset]) metadata[asset] = { timeframes: new Set() };
-    metadata[asset].timeframes.add(timeframe);
+
+  files.forEach((file) => {
+    const [assetPart, timeframePart] = file.replace('.json', '').split('-');
+    if (!assetPart) return;
+    const assetKey = assetPart; // manter em minúsculas para compatibilidade com rotas /api/data
+    const timeframeCode = (timeframePart || '').toUpperCase();
+
+    if (!metadata[assetKey]) {
+      metadata[assetKey] = { timeframes: new Set(), ranges: {} };
+    }
+
+    metadata[assetKey].timeframes.add(timeframeCode);
+
+    try {
+      const filePath = path.join(DATA_DIR, file);
+      const json = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      const range = json && json.range;
+      const candles = Array.isArray(json && json.candles) ? json.candles : [];
+      if (range && range.start && range.end) {
+        metadata[assetKey].ranges[timeframeCode] = {
+          start: range.start,
+          end: range.end,
+          count: candles.length,
+        };
+      }
+    } catch (error) {
+      console.error('[dataCache] failed to parse dataset file', file, error);
+    }
   });
+
   return Object.entries(metadata).map(([asset, meta]) => ({
     asset,
     timeframes: Array.from(meta.timeframes),
+    ranges: meta.ranges,
   }));
 }
 

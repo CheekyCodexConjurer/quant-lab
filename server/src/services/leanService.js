@@ -7,6 +7,12 @@ const { defaultAlgorithm } = require('./lean/defaultAlgorithm');
 const { parseNumber, parsePercent, parseEquityFromCharts, parseEquityCsv } = require('./lean/parsers');
 const { LEAN_WORKSPACE_DIR, LEAN_DATA_DIR, LEAN_RESULTS_DIR, LEAN_ALGORITHMS_DIR } = require('../constants/paths');
 
+/**
+ * Serviço de integração com o Lean CLI.
+ * Responsável por exportar candles, montar config, disparar o processo Lean
+ * e normalizar o resultado em um objeto BacktestResult-like em memória.
+ */
+
 const jobs = new Map();
 
 function ensureDir(targetPath) {
@@ -196,6 +202,11 @@ function summarizeJob(job) {
   };
 }
 
+/**
+ * Inicia um job de backtest Lean e retorna um snapshot do job.
+ * options: { asset, timeframe, code?, startDate?, endDate?, cash?, feeBps?, slippageBps? }
+ * O estado completo do job é mantido no Map `jobs` em memória.
+ */
 function startLeanBacktest(options) {
   ensureWorkspace();
 
@@ -278,10 +289,17 @@ function startLeanBacktest(options) {
   return summarizeJob(job);
 }
 
+/**
+ * Retorna um snapshot resumido do job Lean para o frontend.
+ */
 function getJob(jobId) {
   return summarizeJob(jobs.get(jobId));
 }
 
+/**
+ * Retorna o resultado normalizado de um job Lean (BacktestResult-like).
+ * Se ainda não estiver em memória, tenta reprocessar o resultado a partir de disco.
+ */
 function getResult(jobId) {
   const job = jobs.get(jobId);
   if (!job) return null;

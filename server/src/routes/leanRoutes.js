@@ -1,6 +1,13 @@
 const express = require('express');
 const { startLeanBacktest, getJob, getResult } = require('../services/leanService');
 
+/**
+ * Rotas de orquestração de backtests Lean baseadas em jobs.
+ *
+ * - POST /api/lean/run        -> cria um job Lean e dispara o CLI.
+ * - GET  /api/lean/jobs/:id   -> consulta status/logs de um job.
+ * - GET  /api/lean/results/:id -> obtém o BacktestResult normalizado de um job concluído.
+ */
 const router = express.Router();
 
 router.post('/run', (req, res) => {

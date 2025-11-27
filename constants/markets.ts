@@ -21,7 +21,7 @@ export type MarketAsset = { label: string; symbol: string; dukaId: string };
 export const DUKASCOPY_MARKETS: Record<string, MarketAsset[]> = {
   'Energy Commodities': [
     { label: 'Light Crude Oil', symbol: 'CL1!', dukaId: 'lightcmdusd' },
-    { label: 'Natural Gas', symbol: 'NG1!', dukaId: 'ngascmdusd' },
+    { label: 'Natural Gas', symbol: 'NG1!', dukaId: 'gascmdusd' },
   ],
   'Metals Commodities': [
     { label: 'Gold', symbol: 'GC1!', dukaId: 'xauusd' },
@@ -29,12 +29,12 @@ export const DUKASCOPY_MARKETS: Record<string, MarketAsset[]> = {
     { label: 'High Grade Copper', symbol: 'HG1!', dukaId: 'coppercmdusd' },
   ],
   'Stock Indices': [
-    { label: 'S&P 500', symbol: 'ES1!', dukaId: 'usa500idx' },
-    { label: 'Nasdaq 100', symbol: 'NQ1!', dukaId: 'usatechidx' },
+    { label: 'S&P 500', symbol: 'ES1!', dukaId: 'usa500idxusd' },
+    { label: 'Nasdaq 100', symbol: 'NQ1!', dukaId: 'usatechidxusd' },
   ],
   Agricultural: [
     { label: 'Corn', symbol: 'ZC1!', dukaId: 'corncmdusd' },
-    { label: 'Soybean', symbol: 'ZS1!', dukaId: 'soybeancmdusd' },
+    { label: 'Soybean', symbol: 'ZS1!', dukaId: 'soybeancmdusx' },
   ],
   'Crypto Assets': [
     { label: 'Bitcoin', symbol: 'BTC1!', dukaId: 'btcusd' },

@@ -8,8 +8,17 @@ router.post('/dukascopy', async (req, res) => {
   if (!asset || !timeframe) {
     return res.status(400).json({ error: 'asset and timeframe are required' });
   }
-  const job = await runDukascopyJob({ asset, timeframe, mode, startDate, endDate, fullHistory });
-  res.status(202).json(job);
+  try {
+    const job = await runDukascopyJob({ asset, timeframe, mode, startDate, endDate, fullHistory });
+    res.status(202).json(job);
+  } catch (error) {
+    const message = (error && error.message) || 'Failed to start Dukascopy import';
+    const isUserError =
+      message.includes('not supported for Dukascopy import') || message.includes('Tick imports are disabled');
+    const statusCode = isUserError ? 400 : 500;
+    console.error('[import] dukascopy job failed to start', error);
+    res.status(statusCode).json({ error: message });
+  }
 });
 
 router.post('/dukascopy/check', (req, res) => {

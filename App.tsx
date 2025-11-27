@@ -16,6 +16,7 @@ import { StrategyView } from './views/StrategyView';
 import { AnalysisView } from './views/AnalysisView';
 import { ApiDocsView } from './views/ApiDocsView';
 import { RepositoryView } from './views/RepositoryView';
+import { RoadmapView } from './views/RoadmapView';
 import { ViewState } from './types';
 import { apiClient } from './services/api/client';
 import { applyGapQuantization } from './utils/gapQuantization';
@@ -329,6 +330,8 @@ const AppContent: React.FC = () => {
         return <ApiDocsView />;
       case ViewState.REPOSITORY:
         return <RepositoryView />;
+      case ViewState.ROADMAP:
+        return <RoadmapView />;
       default:
         return null;
     }

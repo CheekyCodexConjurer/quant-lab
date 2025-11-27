@@ -1,0 +1,11 @@
+{
+  "name": "the-lab-desktop-shell",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shell desktop placeholder for The Lab (Tauri/Electron to be defined in futuras fases do roadmap).",
+  "scripts": {
+    "dev": "echo \"Desktop shell ainda não implementado. Ver roadmap Fase 1/2.\"",
+    "build": "echo \"Desktop shell ainda não implementado. Ver roadmap Fase 1/2.\""
+  }
+}
+

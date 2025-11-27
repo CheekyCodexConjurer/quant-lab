@@ -17,6 +17,7 @@ const titleMap: Record<ViewState, string> = {
   [ViewState.STRATEGY]: '',
   [ViewState.API_DOCS]: 'API Documentation',
   [ViewState.REPOSITORY]: 'Repository',
+  [ViewState.ROADMAP]: '',
 };
 
 export const MainHeader: React.FC<MainHeaderProps> = ({

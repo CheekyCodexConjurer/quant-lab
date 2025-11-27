@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiClient } from '../services/api/client';
 import { BacktestResult } from '../types';
+import { adaptLeanResult } from '../utils/leanResultAdapter';
 
 type LeanStatus = 'idle' | 'queued' | 'running' | 'completed' | 'error';
 
@@ -22,6 +23,17 @@ const DEFAULT_PARAMS = {
   slippageBps: 1,
 };
 
+/**
+ * Hook para orquestrar backtests Lean via backend.
+ *
+ * Contrato principal:
+ * - runLeanBacktest(payload) enfileira um job Lean com:
+ *   { asset, timeframe, code?, startDate?, endDate?, cash?, feeBps?, slippageBps? }.
+ * - status: 'idle' | 'queued' | 'running' | 'completed' | 'error'
+ *   ('completed' equivale ao "done" descrito no roadmap).
+ * - logs: linhas de stdout/stderr e mensagens internas do serviço Lean.
+ * - result: BacktestResult | null (quando presente, sempre com source = 'lean').
+ */
 export const useLeanBacktest = (onResult?: (result: BacktestResult) => void) => {
   const [status, setStatus] = useState<LeanStatus>('idle');
   const [logs, setLogs] = useState<string[]>([]);
@@ -51,11 +63,7 @@ export const useLeanBacktest = (onResult?: (result: BacktestResult) => void) => 
   const fetchResult = async (id: string) => {
     const res = await apiClient.getLeanResults(id);
     if (res?.status !== 'completed') return;
-    const parsed: BacktestResult = {
-      ...res.result,
-      source: 'lean',
-      jobId: id,
-    };
+    const parsed: BacktestResult = adaptLeanResult(res.result, id);
     setResult(parsed);
     setStatus('completed');
     onResult?.(parsed);

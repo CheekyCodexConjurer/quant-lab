@@ -526,18 +526,22 @@ const executeJob = async (job) => {
 };
 
 async function runDukascopyJob({ asset, timeframe, mode = 'restart', startDate, endDate, fullHistory }) {
+  const symbol = String(asset || '').toUpperCase();
+  if (!ASSET_SOURCES[symbol]) {
+    throw new Error(`Asset ${symbol} is not supported for Dukascopy import`);
+  }
   if (timeframe && timeframe.toLowerCase() === 'tick') {
     throw new Error('Tick imports are disabled; use M1 or higher.');
   }
   const jobId = uuid();
-  const existingRanges = readExistingRanges(asset);
+  const existingRanges = readExistingRanges(symbol);
   const job = {
     id: jobId,
     serverBootId,
     status: 'running',
     progress: 0,
     logs: [],
-    asset,
+    asset: symbol,
     timeframe,
     range: {},
     hasExisting: Object.keys(existingRanges).length > 0,
@@ -557,7 +561,7 @@ async function runDukascopyJob({ asset, timeframe, mode = 'restart', startDate, 
 
   jobs.set(jobId, job);
   if (mode === 'restart') {
-    deleteExistingAssetData(asset);
+    deleteExistingAssetData(symbol);
     job.logs.push(mockStep('Restart mode: removed existing cached files for asset.'));
   }
   persistJobsToDisk();

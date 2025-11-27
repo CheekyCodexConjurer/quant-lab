@@ -77,6 +77,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onChange }) => (
           onClick={() => onChange(ViewState.REPOSITORY)}
         />
       </div>
+
+      <div className="pt-4 mt-4 border-t border-slate-100">
+        <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Internal</p>
+        <SidebarItem icon={<BookOpen size={18} />} label="Roadmap" isActive={activeView === ViewState.ROADMAP} onClick={() => onChange(ViewState.ROADMAP)} />
+      </div>
     </nav>
 
     <div className="p-6 mt-auto border-t border-slate-100">
