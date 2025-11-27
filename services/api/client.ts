@@ -144,7 +144,7 @@ export const apiClient = {
     return res.json();
   },
 
-  async saveIndicator(id: string, payload: { code: string; filePath?: string }) {
+  async saveIndicator(id: string, payload: { code?: string; filePath?: string; active?: boolean; name?: string }) {
     const res = await fetch(`${BASE_URL}/api/indicators/${id}`, {
       method: 'POST',
       headers,
@@ -161,6 +161,27 @@ export const apiClient = {
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error('Failed to save indicator');
+    return res.json();
+  },
+
+  async setIndicatorActive(id: string, active: boolean) {
+    const res = await fetch(`${BASE_URL}/api/indicators/${id}/active`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ active }),
+    });
+    if (!res.ok) throw new Error('Failed to toggle indicator');
+    return res.json();
+  },
+
+  async deleteIndicator(id: string) {
+    const res = await fetch(`${BASE_URL}/api/indicators/${id}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error || 'Failed to delete indicator');
+    }
     return res.json();
   },
 

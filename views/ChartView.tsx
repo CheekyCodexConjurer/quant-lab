@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Eye, EyeOff, Star, StarOff, X, Paintbrush } from 'lucide-react';
-import { LightweightChart } from '../components/LightweightChart';
+import { ChevronDown, Eye, EyeOff, Star, StarOff, X, Paintbrush, RotateCcw } from 'lucide-react';
+import { LightweightChart, LightweightChartHandle } from '../components/LightweightChart';
 import { AVAILABLE_ASSETS } from '../constants/markets';
 import { TIMEFRAME_LIBRARY } from '../constants/timeframes';
 import { Candle, BacktestResult, CustomIndicator, ChartAppearance } from '../types';
 import { ChartStyleMenu } from '../components/chart/ChartStyleMenu';
 import { DEFAULT_APPEARANCE } from '../context/AppStateContext';
+import { normalizeSlashes } from '../utils/path';
+import { ChartContextMenu } from '../components/chart/ChartContextMenu';
 
 type ChartViewProps = {
   data: Candle[];
@@ -14,7 +16,8 @@ type ChartViewProps = {
   error?: string | null;
   backtestResult: BacktestResult | null;
   indicators: CustomIndicator[];
-  indicatorData: { time: string | number; value: number }[];
+  indicatorData: Record<string, { time: string | number; value: number }[]>;
+  indicatorOrder: string[];
   activeSymbol: string;
   onSymbolChange: (symbol: string) => void;
   activeTimeframe: string;
@@ -37,6 +40,7 @@ export const ChartView: React.FC<ChartViewProps> = ({
   backtestResult,
   indicators,
   indicatorData,
+  indicatorOrder,
   activeSymbol,
   onSymbolChange,
   activeTimeframe,
@@ -56,24 +60,49 @@ export const ChartView: React.FC<ChartViewProps> = ({
   error = null,
   onCancelLoad,
 }) => {
-  const hasVisibleIndicator = indicators.some((indicator) => indicator.isActive && indicator.isVisible);
+  const visibleIndicators = indicators
+    .filter((indicator) => indicator.isActive && indicator.isVisible)
+    .sort((a, b) => {
+      const idxA = indicatorOrder.findIndex((p) => normalizeSlashes(p) === normalizeSlashes(a.filePath || ''));
+      const idxB = indicatorOrder.findIndex((p) => normalizeSlashes(p) === normalizeSlashes(b.filePath || ''));
+      const wa = idxA >= 0 ? idxA : Number.MAX_SAFE_INTEGER;
+      const wb = idxB >= 0 ? idxB : Number.MAX_SAFE_INTEGER;
+      if (wa !== wb) return wa - wb;
+      return (a.name || a.id).localeCompare(b.name || b.id);
+    });
+  const hasVisibleIndicator = visibleIndicators.length > 0;
   const [isMenuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const [menuPlacement, setMenuPlacement] = useState<'top' | 'bottom'>('top');
   const [isStyleMenuOpen, setStyleMenuOpen] = useState(false);
+  const chartRef = useRef<LightweightChartHandle>(null);
+  const chartAreaRef = useRef<HTMLDivElement>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  const [contextMenuOpen, setContextMenuOpen] = useState(false);
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setMenuOpen(false);
       }
+      if (
+        contextMenuOpen &&
+        contextMenuRef.current &&
+        !contextMenuRef.current.contains(event.target as Node)
+      ) {
+        setContextMenuOpen(false);
+      }
     };
     if (isMenuOpen) {
       window.addEventListener('mousedown', handleClick);
     }
+    if (contextMenuOpen) {
+      window.addEventListener('mousedown', handleClick);
+    }
     return () => window.removeEventListener('mousedown', handleClick);
-  }, [isMenuOpen]);
+  }, [isMenuOpen, contextMenuOpen]);
 
   useEffect(() => {
     const updatePlacement = () => {
@@ -100,6 +129,23 @@ export const ChartView: React.FC<ChartViewProps> = ({
     };
   }, [isMenuOpen]);
 
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setContextMenuOpen(false);
+      }
+    };
+    const handleScroll = () => setContextMenuOpen(false);
+    if (contextMenuOpen) {
+      window.addEventListener('keydown', handleKey);
+      window.addEventListener('scroll', handleScroll, true);
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKey);
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [contextMenuOpen]);
+
   const togglePinned = (code: string) => {
     if (pinnedTimeframes.includes(code)) {
       onPinnedChange(pinnedTimeframes.filter((tf) => tf !== code));
@@ -109,6 +155,21 @@ export const ChartView: React.FC<ChartViewProps> = ({
   };
 
   const isTimeframeAvailable = (code: string) => allTimeframes.includes(code);
+
+  const handleContextMenu = (event: React.MouseEvent) => {
+    event.preventDefault();
+    const rect = chartAreaRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setContextMenuPos({
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    });
+    setContextMenuOpen(true);
+  };
+
+  const handleResetView = () => {
+    chartRef.current?.resetView();
+  };
 
   return (
     <div className="h-full min-h-[720px] min-w-0 flex-1 w-full flex flex-col bg-white border border-slate-200 p-1 shadow-sm relative">
@@ -236,33 +297,73 @@ export const ChartView: React.FC<ChartViewProps> = ({
         </button>
       </div>
 
-      {indicators
-        .filter((indicator) => indicator.isActive)
-        .map((indicator) => (
-          <div
-            key={indicator.id}
-            className="absolute top-[4.5rem] left-4 z-10 flex items-center gap-2 bg-white/90 backdrop-blur border border-slate-200 px-3 py-1 shadow-sm"
-          >
-            <span className="text-xs font-medium text-slate-700">{indicator.name}</span>
-            <button onClick={() => onToggleVisibility(indicator.id)} className="ml-2 text-slate-400 hover:text-slate-900">
-              {indicator.isVisible ? <Eye size={12} /> : <EyeOff size={12} />}
-            </button>
-            <button onClick={() => onToggleIndicator(indicator.id)} className="ml-1 text-slate-400 hover:text-rose-500">
-              <X size={12} />
-            </button>
-          </div>
-        ))}
+      {indicators.some((indicator) => indicator.isActive) && (
+        <div className="absolute top-[4.5rem] left-4 z-10 flex flex-col gap-2">
+          {indicators
+            .filter((indicator) => indicator.isActive)
+            .map((indicator) => (
+              <div
+                key={indicator.id}
+                className="flex items-center gap-2 bg-white/90 backdrop-blur border border-slate-200 px-3 py-1 shadow-sm"
+              >
+                <span className="text-xs font-medium text-slate-700">{indicator.name}</span>
+                <button onClick={() => onToggleVisibility(indicator.id)} className="ml-2 text-slate-400 hover:text-slate-900">
+                  {indicator.isVisible ? <Eye size={12} /> : <EyeOff size={12} />}
+                </button>
+                <button onClick={() => onToggleIndicator(indicator.id)} className="ml-1 text-slate-400 hover:text-rose-500">
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+        </div>
+      )}
 
-      <div className="flex-1 relative min-h-[640px]">
+      <div
+        className="flex-1 relative min-h-[640px]"
+        onContextMenu={handleContextMenu}
+        ref={chartAreaRef}
+      >
+        <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+          <button
+            onClick={handleResetView}
+            className="p-1.5 rounded-sm border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 shadow-sm"
+            title="Reset chart view"
+            aria-label="Reset chart view"
+          >
+            <RotateCcw size={14} />
+          </button>
+        </div>
         <LightweightChart
+          ref={chartRef}
           data={data}
           trades={backtestResult?.trades}
-          lineData={hasVisibleIndicator ? indicatorData : undefined}
-          lineColor="#2962FF"
+          lines={
+            hasVisibleIndicator
+              ? visibleIndicators
+                  .map((indicator, idx) => {
+                    const series = indicatorData[indicator.id] || [];
+                    if (!series.length) return null;
+                    const palette = ['#2962FF', '#ef4444', '#22c55e', '#f59e0b', '#a855f7', '#0ea5e9'];
+                    const color = palette[idx % palette.length];
+                    return { id: indicator.id, data: series, color };
+                  })
+                  .filter(Boolean)
+              : undefined
+          }
           timeframe={activeTimeframe}
           timezone={chartTimezone}
           appearance={chartAppearance}
         />
+        {contextMenuOpen ? (
+          <div ref={contextMenuRef}>
+            <ChartContextMenu
+              x={contextMenuPos.x}
+              y={contextMenuPos.y}
+              onReset={handleResetView}
+              onClose={() => setContextMenuOpen(false)}
+            />
+          </div>
+        ) : null}
       </div>
 
       {isStyleMenuOpen && (

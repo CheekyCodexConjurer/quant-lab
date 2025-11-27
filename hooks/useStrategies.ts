@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { StrategyFile } from '../types';
 import { apiClient } from '../services/api/client';
+import { loadStrategyOrder, persistStrategyOrder } from '../utils/storage/strategyStorage';
 
 const SELECTED_STRATEGY_KEY = 'thelab.strategy.selectedId';
 const APPLIED_STRATEGY_KEY = 'thelab.strategy.appliedVersion';
@@ -37,14 +38,19 @@ const loadAppliedVersion = (): number => {
   }
 };
 
-const persistAppliedVersion = (version: number) => {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(APPLIED_STRATEGY_KEY, String(version));
-  } catch {
-    /* ignore */
-  }
-};
+  const persistAppliedVersion = (version: number) => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(APPLIED_STRATEGY_KEY, String(version));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const updateOrder = (next: string[]) => {
+    setStrategyOrder(next);
+    persistStrategyOrder(next);
+  };
 
 const normalizeFolder = (folderPath?: string) => {
   const raw = String(folderPath || 'strategies')
@@ -55,10 +61,17 @@ const normalizeFolder = (folderPath?: string) => {
   return raw.toLowerCase().startsWith('strategies') ? raw : `strategies/${raw}`;
 };
 
+const normalizePath = (value?: string | null) =>
+  String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '');
+
 export const useStrategies = () => {
   const [strategies, setStrategies] = useState<StrategyFile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(loadSelectedId);
   const [appliedVersion, setAppliedVersion] = useState<number>(loadAppliedVersion);
+  const [strategyOrder, setStrategyOrder] = useState<string[]>(loadStrategyOrder);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -75,6 +88,10 @@ export const useStrategies = () => {
           appliedVersion,
         }));
         setStrategies(hydrated);
+        if (strategyOrder.length === 0) {
+          const paths = hydrated.map((s) => normalizePath(s.filePath));
+          updateOrder(paths);
+        }
         if (!selectedId && hydrated[0]) {
           setSelectedId(hydrated[0].id);
           persistSelectedId(hydrated[0].id);
@@ -166,6 +183,7 @@ export const useStrategies = () => {
       persistSelectedId(id);
       setAppliedVersion(version);
       persistAppliedVersion(version);
+      updateOrder([...strategyOrder, normalizePath(newStrategy.filePath)]);
     } catch {
       /* ignore */
     }
@@ -198,6 +216,11 @@ export const useStrategies = () => {
         },
       ];
     });
+    const normalized = normalizePath(item?.filePath || filePath);
+    if (normalized) {
+      const nextOrder = strategyOrder.includes(normalized) ? strategyOrder : [...strategyOrder, normalized];
+      updateOrder(nextOrder);
+    }
     setSelectedId(id);
     persistSelectedId(id);
     setAppliedVersion(version);
@@ -221,6 +244,8 @@ export const useStrategies = () => {
       }
       return current;
     });
+    const remainingPaths = strategies.filter((s) => s.id !== id).map((s) => normalizePath(s.filePath));
+    updateOrder(strategyOrder.filter((path) => remainingPaths.includes(normalizePath(path))));
   };
 
   const updateStrategyPath = async (id: string, nextPath: string) => {
@@ -250,6 +275,15 @@ export const useStrategies = () => {
     persistSelectedId(newId);
     setAppliedVersion(version);
     persistAppliedVersion(version);
+    const prevPath = normalizePath(strategy.filePath);
+    const nextNorm = normalizePath(item?.filePath || nextPath);
+    if (nextNorm) {
+      const reordered = strategyOrder.length
+        ? strategyOrder.map((path) => (normalizePath(path) === prevPath ? nextNorm : path))
+        : [nextNorm];
+      if (!reordered.includes(nextNorm)) reordered.push(nextNorm);
+      updateOrder(reordered);
+    }
   };
 
   const refreshFromDisk = async (id: string) => {
@@ -298,5 +332,7 @@ export const useStrategies = () => {
     importStrategy,
     deleteStrategy,
     updateStrategyPath,
+    strategyOrder,
+    setStrategyOrder: updateOrder,
   };
 };

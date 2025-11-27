@@ -39,7 +39,7 @@ Guia completo do frontend para agentes/LLMs: mapa de arquivos, fluxos, dependenc
 
 ## Views (pontos de tela)
 - `views/ChartView.tsx`: grafico principal; barra de ativos/timeframes; botao de estilo (pincel). Renderiza um `LightweightChart` com indicadores/backtest overlay. Usa `ChartStyleMenu` para aparencia.
-- `views/IndicatorView.tsx`: CRUD de indicadores Python (upload, salvar, ativar/exibir, refresh do disco).
+ - `views/IndicatorView.tsx`: (descontinuada) a edição de indicadores foi unificada na Lean Strategy.
 - `views/DataSourcesView.tsx`: importa dados (Dukascopy/custom), seleciona mercado/ativo/datas, mostra logs via `SyncLogConsole`.
 - `views/DataNormalizationView.tsx`: ajustes de normalizacao (timezone, basis, tick size, gap quant).
 - `views/StrategyView.tsx`: editor de estrategia Python; salvar/aplicar, rodar simulacao.
@@ -54,6 +54,7 @@ Guia completo do frontend para agentes/LLMs: mapa de arquivos, fluxos, dependenc
 - Form/inputs: `components/common/DatePickerInput.tsx`.
 - Painel de logs: `components/panels/SyncLogConsole.tsx`.
 - Visual: `components/StatsCard.tsx`.
+- Editor/arquivos: `components/editor/PythonEditor.tsx` (overlay sincronizado + textarea para codigo Python) e `components/files/FileTree.tsx` (arvore generica para indicadores/estrategias).
 
 ## Utils e constantes
 - `constants/markets.ts`: assets, timeframes padrao, tick presets, mercados Dukascopy.
@@ -63,6 +64,8 @@ Guia completo do frontend para agentes/LLMs: mapa de arquivos, fluxos, dependenc
 - `utils/mockData.ts`: geracao de candles sintéticos.
 - `utils/indicators.ts`: calculo EMA local, templates de indicador Python.
 - `utils/gapQuantization.ts`: ajusta candles removendo gaps.
+- `utils/path.ts`: normalize/trunca caminhos reutilizados em arvores/editores.
+- `utils/storage/indicatorStorage.ts`: helpers de localStorage para indicadores (selecionado, appliedVersion, nomes).
 
 ## Configuracao
 - `vite.config.ts`: plugin React, alias @, define vars de ambiente (GEMINI placeholders), porta preferida `VITE_DEV_PORT` (ou PORT, fallback 3070).

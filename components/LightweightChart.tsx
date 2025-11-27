@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import {
   CandlestickSeries,
   ColorType,
@@ -18,12 +18,15 @@ import { deriveMinBarSpacing, formatTickLabel, formatTooltipLabel, timeframeToMi
 interface ChartProps {
   data: Candle[];
   trades?: Trade[];
-  lineData?: { time: string | number; value: number }[];
-  lineColor?: string;
+  lines?: { id: string; data: { time: string | number; value: number }[]; color?: string }[];
   timezone?: string;
   timeframe?: string;
   appearance: ChartAppearance;
 }
+
+export type LightweightChartHandle = {
+  resetView: () => void;
+};
 
 type CandlePoint = {
   time: UTCTimestamp;
@@ -33,19 +36,35 @@ type CandlePoint = {
   close: number;
 };
 
-export const LightweightChart: React.FC<ChartProps> = ({
+export const LightweightChart = forwardRef<LightweightChartHandle, ChartProps>(({
   data,
   trades,
-  lineData,
-  lineColor = '#2962FF',
+  lines,
   timezone = 'UTC',
   timeframe,
   appearance,
-}) => {
+}, ref) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const lineSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const lineSeriesMapRef = useRef<Record<string, ISeriesApi<'Line'>>>({});
+
+  const resetView = () => {
+    if (!chartRef.current) return;
+    const timeScale = chartRef.current.timeScale();
+    timeScale.resetTimeScale();
+    timeScale.fitContent();
+    try {
+      chartRef.current.priceScale('right').applyOptions({ autoScale: true });
+      candleSeriesRef.current?.priceScale().applyOptions({ autoScale: true });
+    } catch {
+      /* ignore runtime chart errors */
+    }
+  };
+
+  useImperativeHandle(ref, () => ({
+    resetView,
+  }), []);
 
   // Mount chart once
   useEffect(() => {
@@ -99,16 +118,9 @@ export const LightweightChart: React.FC<ChartProps> = ({
       wickDownColor: appearance.candleDown.wick,
       priceLineVisible: false,
     });
-    const trendSeries = chart.addSeries(LineSeries, {
-      color: lineColor,
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    });
 
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
-    lineSeriesRef.current = trendSeries;
 
     const handleResize = () => {
       if (!chartContainerRef.current || !chartRef.current) return;
@@ -136,7 +148,7 @@ export const LightweightChart: React.FC<ChartProps> = ({
       }
       chartRef.current = null;
       candleSeriesRef.current = null;
-      lineSeriesRef.current = null;
+      lineSeriesMapRef.current = {};
     };
   }, []);
 
@@ -154,8 +166,7 @@ export const LightweightChart: React.FC<ChartProps> = ({
         timeFormatter: (time: Time) => formatTooltipLabel(time, timezone),
       },
     });
-    lineSeriesRef.current?.applyOptions({ color: lineColor });
-  }, [timeframe, timezone, lineColor]);
+  }, [timeframe, timezone]);
 
   // Update appearance dynamically without remounting the chart
   useEffect(() => {
@@ -198,25 +209,53 @@ export const LightweightChart: React.FC<ChartProps> = ({
       })
       .filter(Boolean) as CandlePoint[];
     candleSeriesRef.current.setData(normalizedData);
-    chartRef.current?.timeScale().fitContent();
+    resetView();
   }, [data]);
 
-  // Update line data when it changes
+  // Update line series when they change
   useEffect(() => {
-    if (!lineSeriesRef.current || !chartRef.current) return;
-    if (lineData && lineData.length > 0) {
-      const normalizedLine = lineData
+    if (!chartRef.current) return;
+    const palette = ['#2962FF', '#ef4444', '#22c55e', '#f59e0b', '#a855f7', '#0ea5e9'];
+    const incoming = Array.isArray(lines) ? lines : [];
+
+    // Remove stale series
+    Object.keys(lineSeriesMapRef.current).forEach((id) => {
+      const stillExists = incoming.some((line) => line?.id === id);
+      if (!stillExists) {
+        try {
+          chartRef.current?.removeSeries(lineSeriesMapRef.current[id]);
+        } catch {
+          /* ignore */
+        }
+        delete lineSeriesMapRef.current[id];
+      }
+    });
+
+    incoming.forEach((line, idx) => {
+      if (!line || !Array.isArray(line.data)) return;
+      const color = line.color || palette[idx % palette.length];
+      let series = lineSeriesMapRef.current[line.id];
+      if (!series) {
+        series = chartRef.current!.addSeries(LineSeries, {
+          color,
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+        lineSeriesMapRef.current[line.id] = series;
+      } else {
+        series.applyOptions({ color });
+      }
+      const normalized = line.data
         .map((point) => {
           const ts = toTimestampSeconds(point.time);
           if (ts === null) return null;
           return { time: ts, value: point.value };
         })
         .filter(Boolean) as { time: UTCTimestamp; value: number }[];
-      lineSeriesRef.current.setData(normalizedLine);
-    } else {
-      lineSeriesRef.current.setData([]);
-    }
-  }, [lineData]);
+      series.setData(normalized);
+    });
+  }, [lines]);
 
   // Update markers when trades change
   useEffect(() => {
@@ -250,4 +289,6 @@ export const LightweightChart: React.FC<ChartProps> = ({
   }, [trades]);
 
   return <div ref={chartContainerRef} className="w-full h-full" />;
-};
+});
+
+LightweightChart.displayName = 'LightweightChart';

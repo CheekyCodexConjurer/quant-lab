@@ -3,6 +3,8 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const { exportCandlesToLean, normalizeTime } = require('./leanDataBridge');
+const { defaultAlgorithm } = require('./lean/defaultAlgorithm');
+const { parseNumber, parsePercent, parseEquityFromCharts, parseEquityCsv } = require('./lean/parsers');
 const { LEAN_WORKSPACE_DIR, LEAN_DATA_DIR, LEAN_RESULTS_DIR, LEAN_ALGORITHMS_DIR } = require('../constants/paths');
 
 const jobs = new Map();
@@ -15,57 +17,6 @@ function ensureDir(targetPath) {
 
 function ensureWorkspace() {
   [LEAN_WORKSPACE_DIR, LEAN_DATA_DIR, LEAN_RESULTS_DIR, LEAN_ALGORITHMS_DIR].forEach(ensureDir);
-}
-
-function defaultAlgorithm() {
-  return [
-    "from AlgorithmImports import *",
-    "",
-    "class LocalLeanExample(QCAlgorithm):",
-    "    def Initialize(self):",
-    "        self.SetStartDate(2020, 1, 1)",
-    "        self.SetEndDate(2020, 6, 1)",
-    "        cash = self.GetParameter('cash') or 100000",
-    "        self.SetCash(float(cash))",
-    "        symbol = self.GetParameter('symbol') or 'SPY'",
-    "        resolution = self.GetParameter('resolution') or 'Minute'",
-    "        fee_bps = float(self.GetParameter('feeBps') or 0.5)",
-    "        slippage_bps = float(self.GetParameter('slippageBps') or 1)",
-    "        self.symbol = self.AddEquity(symbol, self._parse_resolution(resolution)).Symbol",
-    "        self.SetSecurityInitializer(lambda sec: self._configure_costs(sec, fee_bps, slippage_bps))",
-    "        self.short = self.SMA(self.symbol, 9, Resolution.Daily)",
-    "        self.long = self.SMA(self.symbol, 21, Resolution.Daily)",
-    "        self.SetWarmup(30)",
-    "",
-    "    def _parse_resolution(self, value):",
-    "        mapping = {",
-    "            'tick': Resolution.Tick,",
-    "            'second': Resolution.Second,",
-    "            'minute': Resolution.Minute,",
-    "            'hour': Resolution.Hour,",
-    "            'daily': Resolution.Daily,",
-    "            'day': Resolution.Daily,",
-    "        }",
-    "        return mapping.get((value or '').lower(), Resolution.Minute)",
-    "",
-    "    def _configure_costs(self, security, fee_bps, slippage_bps):",
-    "        # bps -> decimal",
-    "        fee = float(fee_bps) / 10000.0",
-    "        slippage = float(slippage_bps) / 10000.0",
-    "        security.SetFeeModel(ConstantFeeModel(fee))",
-    "        security.SetSlippageModel(ConstantSlippageModel(slippage))",
-    "",
-    "    def OnData(self, data: Slice):",
-    "        if self.IsWarmingUp:",
-    "            return",
-    "        if not (self.short.IsReady and self.long.IsReady):",
-    "            return",
-    "        holdings = self.Portfolio[self.symbol].Quantity",
-    "        if holdings <= 0 and self.short.Current.Value > self.long.Current.Value:",
-    "            self.SetHoldings(self.symbol, 1)",
-    "        elif holdings > 0 and self.short.Current.Value < self.long.Current.Value:",
-    "            self.Liquidate(self.symbol)",
-  ].join('\n');
 }
 
 function writeAlgorithm(code) {
@@ -112,57 +63,6 @@ function buildConfig(jobId, algorithmPath, options) {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
 
   return { configPath, jobDir };
-}
-
-function fromOADate(value) {
-  const millis = (value - 25569) * 86400 * 1000;
-  return new Date(millis);
-}
-
-function parseNumber(value) {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'number') return value;
-  const cleaned = String(value).replace(/[$,%]/g, '').replace(/,/g, '').trim();
-  const num = Number(cleaned);
-  return Number.isNaN(num) ? null : num;
-}
-
-function parsePercent(value) {
-  const num = parseNumber(value);
-  if (num === null) return null;
-  const hasPercent = typeof value === 'string' && value.includes('%');
-  return hasPercent ? num / 100 : num;
-}
-
-function parseEquityFromCharts(charts) {
-  if (!charts || typeof charts !== 'object') return [];
-  const chartNames = Object.keys(charts);
-  for (const chartName of chartNames) {
-    const chart = charts[chartName];
-    if (!chart?.Series) continue;
-    const seriesNames = Object.keys(chart.Series);
-    for (const seriesName of seriesNames) {
-      const series = chart.Series[seriesName];
-      if (!series?.Values || !Array.isArray(series.Values)) continue;
-      return series.Values.map((point) => {
-        const { x, y } = point || {};
-        const time = typeof x === 'number' ? fromOADate(x).toISOString() : normalizeTime(x);
-        return { time, value: Number(y || 0) };
-      });
-    }
-  }
-  return [];
-}
-
-function parseEquityCsv(csvPath) {
-  if (!fs.existsSync(csvPath)) return [];
-  const [header, ...rows] = fs.readFileSync(csvPath, 'utf-8').split(/\r?\n/).filter(Boolean);
-  if (!header || !header.toLowerCase().includes('time')) return [];
-  return rows.map((line) => {
-    const [timeRaw, valueRaw] = line.split(',');
-    const value = Number(valueRaw || 0);
-    return { time: normalizeTime(timeRaw), value };
-  });
 }
 
 function parseTradesFromOrders(orders) {

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Globe, Layers, Sliders, ChevronDown, Check } from 'lucide-react';
+import { MainContent } from '../components/layout/MainContent';
 import { TICK_PRESETS } from '../constants/markets';
 import { BasisType } from '../hooks/useNormalizationSettings';
 import { TIMEZONE_OPTIONS, getTimezoneById } from '../constants/timezones';
@@ -53,7 +54,7 @@ export const DataNormalizationView: React.FC<DataNormalizationViewProps> = ({
   const selectedTimezone = getTimezoneById(normTimezone);
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <MainContent className="h-auto min-h-full">
       <div className="mb-10">
         <h3 className="text-lg font-medium text-slate-900">Data Settings</h3>
         <p className="text-slate-500 text-sm mt-1">Configure how raw tick data is aligned, normalized, and discretized before feeding the engine.</p>
@@ -92,9 +93,8 @@ export const DataNormalizationView: React.FC<DataNormalizationViewProps> = ({
                           setNormTimezone(tz.id);
                           setTimezoneOpen(false);
                         }}
-                        className={`w-full text-left px-4 py-1.5 text-[13px] flex items-center justify-between transition-colors ${
-                          isActive ? 'bg-slate-100 text-slate-900 font-medium' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                        }`}
+                        className={`w-full text-left px-4 py-1.5 text-[13px] flex items-center justify-between transition-colors ${isActive ? 'bg-slate-100 text-slate-900 font-medium' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                          }`}
                       >
                         <span>
                           {tz.offset} {tz.label}
@@ -123,9 +123,8 @@ export const DataNormalizationView: React.FC<DataNormalizationViewProps> = ({
                 onClick={() => setGapQuantEnabled(!gapQuantEnabled)}
               >
                 <div
-                  className={`bg-white w-4 h-4 rounded-full shadow-sm transition-transform ${
-                    gapQuantEnabled ? 'translate-x-6' : 'translate-x-0'
-                  }`}
+                  className={`bg-white w-4 h-4 rounded-full shadow-sm transition-transform ${gapQuantEnabled ? 'translate-x-6' : 'translate-x-0'
+                    }`}
                 />
               </div>
               <span className="text-sm font-medium text-slate-900">Gap Quantization</span>
@@ -173,11 +172,10 @@ export const DataNormalizationView: React.FC<DataNormalizationViewProps> = ({
                   <button
                     key={key}
                     onClick={() => setTickFromPreset(value)}
-                    className={`px-2 py-1.5 text-xs font-mono border rounded ${
-                      normTickSize === value && !isCustomTick
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
-                    }`}
+                    className={`px-2 py-1.5 text-xs font-mono border rounded ${normTickSize === value && !isCustomTick
+                      ? 'bg-slate-900 text-white border-slate-900'
+                      : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                      }`}
                   >
                     {key}
                   </button>
@@ -214,6 +212,6 @@ export const DataNormalizationView: React.FC<DataNormalizationViewProps> = ({
           {isSaving ? 'Saving...' : 'Save Rules'}
         </button>
       </div>
-    </div>
+    </MainContent>
   );
 };

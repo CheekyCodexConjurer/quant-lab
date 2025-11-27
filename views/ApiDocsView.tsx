@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { MainContent } from '../components/layout/MainContent';
 
 const navItems = [
   { id: 'overview', label: 'Overview' },
@@ -43,7 +44,7 @@ export const ApiDocsView: React.FC = () => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto bg-white border border-slate-200 p-8 shadow-sm min-h-[600px]">
+    <MainContent className="bg-white border border-slate-200 p-8 shadow-sm min-h-[600px] h-auto min-h-full">
       <div className="border-b border-slate-100 pb-3 mb-5 flex items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-light text-slate-900 mb-2">API Documentation</h1>
@@ -54,11 +55,10 @@ export const ApiDocsView: React.FC = () => {
             <button
               key={item.id}
               onClick={() => handleNavClick(item.id)}
-              className={`px-2.5 py-1 border-b-2 uppercase tracking-widest transition-colors ${
-                activeSection === item.id
-                  ? 'border-slate-300 text-slate-900 bg-slate-50'
-                  : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50/50'
-              }`}
+              className={`px-2.5 py-1 border-b-2 uppercase tracking-widest transition-colors ${activeSection === item.id
+                ? 'border-slate-300 text-slate-900 bg-slate-50'
+                : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50/50'
+                }`}
             >
               {item.label}
             </button>
@@ -66,7 +66,7 @@ export const ApiDocsView: React.FC = () => {
         </nav>
       </div>
 
-      <div className="space-y-5">
+      <div className="space-y-5 pb-10">
         {/* Overview */}
         <section id="overview" className="bg-white border border-slate-200 rounded p-5 shadow-sm">
           <h3 className="text-lg font-medium text-slate-900 mb-3">Overview</h3>
@@ -92,7 +92,7 @@ export const ApiDocsView: React.FC = () => {
               </a>
             </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[13px]">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[13px]">
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-slate-800">Workspace root</span>
                 <span className="font-mono bg-slate-50 px-2 py-1 border border-slate-200 rounded">lean_workspace/</span>
@@ -114,7 +114,7 @@ export const ApiDocsView: React.FC = () => {
             <div>
               <p className="font-semibold text-slate-800 mb-2">CLI quick start</p>
               <div className="bg-slate-100 rounded border border-slate-200 p-3 text-slate-800 font-mono text-[13px] whitespace-pre-wrap">
-{`# install lean cli (requires dotnet/python)
+                {`# install lean cli (requires dotnet/python)
 lean --version
 # backtest using current workspace + Algorithm.py
 lean backtest --config lean_workspace/results/<jobId>/config.json`}
@@ -166,7 +166,7 @@ lean backtest --config lean_workspace/results/<jobId>/config.json`}
             <div className="bg-slate-100 border border-slate-200 rounded p-4">
               <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Entry Point</h4>
               <code className="block font-mono text-sm text-slate-800 whitespace-pre-wrap">
-{`def calculate(inputs):
+                {`def calculate(inputs):
     """
     Main entry point for indicator calculation.
     """
@@ -201,7 +201,7 @@ lean backtest --config lean_workspace/results/<jobId>/config.json`}
           <h3 className="text-lg font-medium text-slate-900 mb-2">Example: Simple Moving Average</h3>
           <div className="bg-slate-100 rounded border border-slate-200 p-4 overflow-x-auto">
             <code className="block font-mono text-sm text-slate-800 whitespace-pre-wrap">
-{`import numpy as np
+              {`import numpy as np
 
 def calculate(inputs):
     data = inputs['close']
@@ -217,6 +217,6 @@ def calculate(inputs):
           </div>
         </section>
       </div>
-    </div>
+    </MainContent>
   );
 };

@@ -48,7 +48,6 @@ export interface CustomIndicator {
 
 export enum ViewState {
   CHART = 'CHART',
-  CHART_INDICATOR = 'CHART_INDICATOR',
   DATA = 'DATA',
   DATA_NORMALIZATION = 'DATA_NORMALIZATION',
   ANALYSIS = 'ANALYSIS',

@@ -3,6 +3,7 @@ import { DownloadCloud, Globe, FileSpreadsheet, Upload } from 'lucide-react';
 import { DUKASCOPY_MARKETS, MarketAsset } from '../constants/markets';
 import { DatePickerInput } from '../components/common/DatePickerInput';
 import { SyncLogConsole } from '../components/panels/SyncLogConsole';
+import { MainContent } from '../components/layout/MainContent';
 
 type DataSourcesViewProps = {
   selectedMarket: string;
@@ -97,7 +98,7 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
   };
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <MainContent className="h-auto min-h-full">
       <div className="mb-8">
         <h3 className="text-lg font-medium text-slate-900">Data Sources</h3>
         <p className="text-slate-500 text-sm mt-1">Import market data from external APIs or local files.</p>
@@ -189,7 +190,7 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
             </button>
           </div>
         </div>
-      </div>
+      </div >
 
       <SyncLogConsole
         logs={logs}
@@ -201,50 +202,52 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
         lastUpdated={lastUpdated}
       />
 
-      {showPrompt && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-sm shadow-lg border border-slate-200 w-[420px] max-w-[90%]">
-            <div className="px-6 py-4 border-b border-slate-100">
-              <h4 className="text-sm font-semibold text-slate-900">Existing data detected</h4>
-              <p className="text-xs text-slate-500 mt-1">
-                We found previous downloads for {existingInfo?.asset || activeSymbol}. Choose how to proceed.
-              </p>
-              {existingInfo?.existingRanges && (
-                <div className="mt-3 bg-slate-50 border border-slate-100 rounded px-3 py-2 text-[11px] text-slate-600 space-y-1">
-                  {Object.entries(existingInfo.existingRanges).map(([frame, range]) => (
-                    <div key={frame} className="flex justify-between">
-                      <span className="font-semibold uppercase">{frame}</span>
-                      <span className="text-right">
-                        {range.start || '?'} -&gt; {range.end || '?'} ({range.count || 0} records)
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="px-6 py-4 flex flex-col gap-2">
-              <button
-                onClick={() => runImportWithMode('continue')}
-                className="w-full py-2.5 bg-slate-900 text-white text-xs font-bold uppercase tracking-widest hover:bg-slate-800 transition-colors"
-              >
-                Continue from last saved point
-              </button>
-              <button
-                onClick={() => runImportWithMode('restart')}
-                className="w-full py-2.5 bg-white border border-slate-200 text-xs font-bold uppercase tracking-widest text-slate-900 hover:border-slate-400 transition-colors"
-              >
-                Reimport full history
-              </button>
-              <button
-                onClick={() => setShowPrompt(false)}
-                className="w-full py-2.5 text-xs font-semibold text-slate-500 hover:text-slate-700"
-              >
-                Cancel
-              </button>
+      {
+        showPrompt && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-sm shadow-lg border border-slate-200 w-[420px] max-w-[90%]">
+              <div className="px-6 py-4 border-b border-slate-100">
+                <h4 className="text-sm font-semibold text-slate-900">Existing data detected</h4>
+                <p className="text-xs text-slate-500 mt-1">
+                  We found previous downloads for {existingInfo?.asset || activeSymbol}. Choose how to proceed.
+                </p>
+                {existingInfo?.existingRanges && (
+                  <div className="mt-3 bg-slate-50 border border-slate-100 rounded px-3 py-2 text-[11px] text-slate-600 space-y-1">
+                    {Object.entries(existingInfo.existingRanges).map(([frame, range]) => (
+                      <div key={frame} className="flex justify-between">
+                        <span className="font-semibold uppercase">{frame}</span>
+                        <span className="text-right">
+                          {range.start || '?'} -&gt; {range.end || '?'} ({range.count || 0} records)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="px-6 py-4 flex flex-col gap-2">
+                <button
+                  onClick={() => runImportWithMode('continue')}
+                  className="w-full py-2.5 bg-slate-900 text-white text-xs font-bold uppercase tracking-widest hover:bg-slate-800 transition-colors"
+                >
+                  Continue from last saved point
+                </button>
+                <button
+                  onClick={() => runImportWithMode('restart')}
+                  className="w-full py-2.5 bg-white border border-slate-200 text-xs font-bold uppercase tracking-widest text-slate-900 hover:border-slate-400 transition-colors"
+                >
+                  Reimport full history
+                </button>
+                <button
+                  onClick={() => setShowPrompt(false)}
+                  className="w-full py-2.5 text-xs font-semibold text-slate-500 hover:text-slate-700"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </MainContent >
   );
 };

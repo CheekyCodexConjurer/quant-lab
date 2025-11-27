@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { INDICATORS_DIR } = require('../constants/paths');
+const { getIndicatorActive, setIndicatorActive, removeIndicator } = require('./indicatorStateStore');
 
 const DEFAULT_INDICATOR_CODE = `import talib
 import numpy as np
@@ -79,6 +80,7 @@ const toMeta = (filePath, relPath) => {
     filePath,
     lastModified: stat.mtimeMs,
     sizeBytes: stat.size,
+    active: getIndicatorActive(id) || false,
   };
 };
 
@@ -123,7 +125,7 @@ const readIndicator = (id) => {
   return { ...meta, code };
 };
 
-const writeIndicator = (id, code, filePathOverride) => {
+const writeIndicator = (id, code, filePathOverride, active) => {
   ensureDir();
   const relPathRaw = filePathOverride ? filePathOverride : decodeId(id);
   const { relPath, canonicalFullPath, legacyFullPath } = resolveRelPath(relPathRaw);
@@ -132,7 +134,24 @@ const writeIndicator = (id, code, filePathOverride) => {
     fs.renameSync(legacyFullPath, canonicalFullPath);
   }
   fs.writeFileSync(canonicalFullPath, code ?? '', 'utf-8');
+  if (typeof active === 'boolean') {
+    setIndicatorActive(encodeId(relPath), active);
+  }
   return readIndicator(encodeId(relPath));
+};
+
+const deleteIndicatorFile = (id) => {
+  ensureDir();
+  const { canonicalFullPath, legacyFullPath } = resolveRelPath(decodeId(id));
+  const targetPath = fs.existsSync(canonicalFullPath)
+    ? canonicalFullPath
+    : fs.existsSync(legacyFullPath)
+      ? legacyFullPath
+      : null;
+  if (!targetPath) return false;
+  fs.unlinkSync(targetPath);
+  removeIndicator(id);
+  return true;
 };
 
 const ensureSeed = () => {
@@ -149,5 +168,6 @@ module.exports = {
   listIndicators,
   readIndicator,
   writeIndicator,
+  deleteIndicatorFile,
   ensureSeed,
 };

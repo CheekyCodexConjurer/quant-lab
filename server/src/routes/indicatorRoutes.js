@@ -1,5 +1,6 @@
 const express = require('express');
-const { listIndicators, readIndicator, writeIndicator, ensureSeed, encodeId } = require('../services/indicatorFileService');
+const { listIndicators, readIndicator, writeIndicator, ensureSeed, encodeId, deleteIndicatorFile } = require('../services/indicatorFileService');
+const { setIndicatorActive } = require('../services/indicatorStateStore');
 
 const router = express.Router();
 
@@ -20,9 +21,28 @@ router.get('/:id', (req, res) => {
 
 router.post('/:id', (req, res) => {
   ensureSeed();
-  const { code, filePath } = req.body || {};
-  const item = writeIndicator(req.params.id, code || '', filePath);
+  const { code, filePath, active } = req.body || {};
+  const item = writeIndicator(req.params.id, code ?? '', filePath, active);
   res.json({ item });
+});
+
+router.delete('/:id', (req, res) => {
+  ensureSeed();
+  const ok = deleteIndicatorFile(req.params.id);
+  if (!ok) {
+    return res.status(404).json({ error: 'indicator not found' });
+  }
+  res.json({ success: true });
+});
+
+router.post('/:id/active', (req, res) => {
+  ensureSeed();
+  const { active } = req.body || {};
+  const updated = setIndicatorActive(req.params.id, Boolean(active));
+  if (!updated) {
+    return res.status(404).json({ error: 'indicator not found' });
+  }
+  res.json({ success: true, active: Boolean(active) });
 });
 
 // convenience route for uploads with arbitrary paths

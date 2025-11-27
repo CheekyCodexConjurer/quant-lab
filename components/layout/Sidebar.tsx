@@ -50,12 +50,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onChange }) => (
         <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Coding</p>
         <SidebarItem
           icon={<Code size={18} />}
-          label="Chart Indicator"
-          isActive={activeView === ViewState.CHART_INDICATOR}
-          onClick={() => onChange(ViewState.CHART_INDICATOR)}
-        />
-        <SidebarItem
-          icon={<Code size={18} />}
           label="Lean Strategy"
           isActive={activeView === ViewState.STRATEGY}
           onClick={() => onChange(ViewState.STRATEGY)}

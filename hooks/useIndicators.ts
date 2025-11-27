@@ -2,174 +2,132 @@ import { useEffect, useMemo, useState } from 'react';
 import { Candle, CustomIndicator } from '../types';
 import { calculateEMA, NEW_INDICATOR_TEMPLATE, DEFAULT_INDICATOR_CODE } from '../utils/indicators';
 import { apiClient } from '../services/api/client';
+import {
+  loadAppliedVersions,
+  loadIndicatorNames,
+  loadIndicatorOrder,
+  loadSelectedIndicatorId,
+  persistAppliedVersions,
+  persistIndicatorNames,
+  persistIndicatorOrder,
+  persistSelectedIndicatorId,
+} from '../utils/storage/indicatorStorage';
+import { ensureRootedPath, normalizeSlashes, toRelativePath } from '../utils/path';
 
-const APPLIED_VERSIONS_KEY = 'thelab.indicators.appliedVersions';
-const SELECTED_ID_KEY = 'thelab.indicators.selectedId';
-const NAMES_KEY = 'thelab.indicators.names';
+const INDICATOR_ROOT = 'indicators';
+const FOLDERS_KEY = 'thelab.indicatorFolders';
 
-const loadAppliedVersions = (): Record<string, number> => {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = window.localStorage.getItem(APPLIED_VERSIONS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-};
-
-const persistAppliedVersions = (versions: Record<string, number>) => {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(APPLIED_VERSIONS_KEY, JSON.stringify(versions));
-  } catch {
-    /* ignore */
-  }
-};
-
-const persistSelectedId = (id: string | null) => {
-  if (typeof window === 'undefined') return;
-  try {
-    if (id) {
-      window.localStorage.setItem(SELECTED_ID_KEY, id);
-    } else {
-      window.localStorage.removeItem(SELECTED_ID_KEY);
-    }
-  } catch {
-    /* ignore */
-  }
-};
-
-const loadSelectedId = () => {
-  if (typeof window === 'undefined') return null;
-  try {
-    return window.localStorage.getItem(SELECTED_ID_KEY);
-  } catch {
-    return null;
-  }
-};
-
-const loadNames = (): Record<string, string> => {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = window.localStorage.getItem(NAMES_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-};
-
-const persistNames = (names: Record<string, string>) => {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(NAMES_KEY, JSON.stringify(names));
-  } catch {
-    /* ignore */
-  }
-};
-
-const normalizeFolder = (folderPath?: string) => {
-  const raw = String(folderPath || 'indicators')
-    .replace(/\\/g, '/')
-    .replace(/^\/+/, '')
-    .replace(/\/+$/, '');
-  if (!raw) return 'indicators';
-  return raw.toLowerCase().startsWith('indicators') ? raw : `indicators/${raw}`;
+const seedIndicator = (): CustomIndicator => {
+  const now = Date.now();
+  return {
+    id: 'ema_200',
+    name: 'EMA 200',
+    code: DEFAULT_INDICATOR_CODE,
+    filePath: `${INDICATOR_ROOT}/ema_200.py`,
+    lastModified: now,
+    sizeBytes: DEFAULT_INDICATOR_CODE.length,
+    isActive: true,
+    isVisible: true,
+    appliedVersion: now,
+    createdAt: now,
+    updatedAt: now,
+    hasUpdate: false,
+  };
 };
 
 const toIndicatorRelativePath = (filePath?: string | null) => {
   if (!filePath) return undefined;
-  const normalized = String(filePath).replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
-  const segments = normalized.split('/').filter(Boolean);
-  if (segments.length === 0) return undefined;
-  const rootIndex = segments.findIndex((seg) => seg.toLowerCase() === 'indicators');
-  const relSegments = rootIndex >= 0 ? segments.slice(rootIndex + 1) : segments;
-  const relPath = relSegments.join('/');
-  return relPath || undefined;
+  const normalized = ensureRootedPath(INDICATOR_ROOT, filePath);
+  const rel = toRelativePath(INDICATOR_ROOT, normalized);
+  return rel ? `${INDICATOR_ROOT}/${rel}` : INDICATOR_ROOT;
+};
+
+const normalizeFolder = (folderPath?: string) => {
+  const normalized = normalizeSlashes(folderPath || INDICATOR_ROOT);
+  if (!normalized) return INDICATOR_ROOT;
+  return normalized.toLowerCase().startsWith(INDICATOR_ROOT) ? normalized : `${INDICATOR_ROOT}/${normalized}`;
 };
 
 export const useIndicators = (data: Candle[]) => {
   const [indicators, setIndicators] = useState<CustomIndicator[]>([]);
-  const [selectedIndicatorId, setSelectedIndicatorId] = useState<string | null>(loadSelectedId);
-  const [indicatorData, setIndicatorData] = useState<{ time: string | number; value: number }[]>([]);
+  const [selectedIndicatorId, setSelectedIndicatorIdState] = useState<string | null>(loadSelectedIndicatorId);
+  const [indicatorData, setIndicatorData] = useState<Record<string, { time: string | number; value: number }[]>>({});
   const [appliedVersions, setAppliedVersions] = useState<Record<string, number>>(loadAppliedVersions);
-  const [nameOverrides, setNameOverrides] = useState<Record<string, string>>(loadNames);
+  const [nameOverrides, setNameOverrides] = useState<Record<string, string>>(loadIndicatorNames);
+  const [indicatorOrder, setIndicatorOrder] = useState<string[]>(loadIndicatorOrder);
+  const [folders, setFolders] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = window.localStorage.getItem(FOLDERS_KEY);
+      const parsed = stored ? JSON.parse(stored) : [];
+      if (Array.isArray(parsed)) return parsed.map((f) => normalizeSlashes(f)).filter(Boolean);
+    } catch {
+      /* ignore */
+    }
+    return [];
+  });
+
+  const setSelectedIndicatorId = (id: string | null) => {
+    setSelectedIndicatorIdState(id);
+    persistSelectedIndicatorId(id);
+  };
+
+  const updateOrder = (next: string[]) => {
+    setIndicatorOrder(next);
+    persistIndicatorOrder(next);
+  };
 
   useEffect(() => {
     const bootstrap = async () => {
       try {
         const response = await apiClient.listIndicators();
-        const items = Array.isArray(response.items) ? response.items : [];
+    const items = Array.isArray(response.items) ? response.items : [];
         if (items.length === 0) {
-          // Fallback: seed a default indicator client-side if API returned empty.
-          const now = Date.now();
-          const seed: CustomIndicator = {
-            id: 'ema_200',
-            name: 'EMA 200',
-            code: DEFAULT_INDICATOR_CODE,
-            filePath: 'indicators/ema_200.py',
-            lastModified: now,
-            sizeBytes: DEFAULT_INDICATOR_CODE.length,
-            isActive: true,
-            isVisible: true,
-            appliedVersion: now,
-            createdAt: now,
-            updatedAt: now,
-            hasUpdate: false,
-          };
+          const seed = seedIndicator();
           setIndicators([seed]);
-          setSelectedIndicatorId('ema_200');
-          persistSelectedId('ema_200');
-          setAppliedVersions({ ema_200: now });
-          persistAppliedVersions({ ema_200: now });
+          setSelectedIndicatorId(seed.id);
+          persistSelectedIndicatorId(seed.id);
+          setAppliedVersions({ [seed.id]: seed.appliedVersion });
+          persistAppliedVersions({ [seed.id]: seed.appliedVersion });
           return;
         }
 
-        const nextIndicators: CustomIndicator[] = items.map((item: any, index: number) => {
+    const nextIndicators: CustomIndicator[] = items.map((item: any, index: number) => {
           const appliedVersion = appliedVersions[item.id] ?? 0;
           const hasUpdate = appliedVersion ? item.lastModified > appliedVersion : false;
-          return {
-            id: item.id,
-            name: nameOverrides[item.id] || item.name || item.id,
-            code: '',
-            filePath: item.filePath,
-            lastModified: item.lastModified,
-            sizeBytes: item.sizeBytes,
-            isActive: index === 0,
-            isVisible: true,
-            appliedVersion,
-            createdAt: item.lastModified,
-            updatedAt: item.lastModified,
-            hasUpdate,
-          };
-        });
+      return {
+        id: item.id,
+        name: nameOverrides[item.id] || item.name || item.id,
+        code: '',
+        filePath: item.filePath,
+        lastModified: item.lastModified,
+        sizeBytes: item.sizeBytes,
+        isActive: Boolean(item.active),
+        isVisible: true,
+        appliedVersion,
+        createdAt: item.lastModified,
+        updatedAt: item.lastModified,
+        hasUpdate,
+      };
+    });
 
         setIndicators(nextIndicators);
+        if (indicatorOrder.length === 0) {
+          const paths = nextIndicators.map((ind) => normalizeSlashes(ind.filePath || ''));
+          updateOrder(paths);
+        }
         if (!selectedIndicatorId && nextIndicators[0]) {
           setSelectedIndicatorId(nextIndicators[0].id);
-          persistSelectedId(nextIndicators[0].id);
+          persistSelectedIndicatorId(nextIndicators[0].id);
         }
       } catch (error) {
         console.warn('[useIndicators] Failed to load indicators from API, using local seed', error);
-        const now = Date.now();
-        const seed: CustomIndicator = {
-          id: 'ema_200',
-          name: 'EMA 200',
-          code: DEFAULT_INDICATOR_CODE,
-          filePath: 'indicators/ema_200.py',
-          lastModified: now,
-          sizeBytes: DEFAULT_INDICATOR_CODE.length,
-          isActive: true,
-          isVisible: true,
-          appliedVersion: now,
-          createdAt: now,
-          updatedAt: now,
-          hasUpdate: false,
-        };
+        const seed = seedIndicator();
         setIndicators([seed]);
-        setSelectedIndicatorId('ema_200');
-        persistSelectedId('ema_200');
-        setAppliedVersions({ ema_200: now });
-        persistAppliedVersions({ ema_200: now });
+        setSelectedIndicatorId(seed.id);
+        persistSelectedIndicatorId(seed.id);
+        setAppliedVersions({ [seed.id]: seed.appliedVersion });
+        persistAppliedVersions({ [seed.id]: seed.appliedVersion });
       }
     };
 
@@ -183,7 +141,6 @@ export const useIndicators = (data: Candle[]) => {
         const response = await apiClient.getIndicator(selectedIndicatorId);
         const item = response.item;
         if (!item) {
-          // If API returns nothing, keep a visible default so the editor is usable.
           setIndicators((prev) =>
             prev.map((indicator) =>
               indicator.id === selectedIndicatorId
@@ -200,7 +157,6 @@ export const useIndicators = (data: Candle[]) => {
           persistAppliedVersions(updated);
           return updated;
         });
-
         setIndicators((prev) =>
           prev.map((indicator) =>
             indicator.id === selectedIndicatorId
@@ -213,13 +169,13 @@ export const useIndicators = (data: Candle[]) => {
                   sizeBytes: item.sizeBytes,
                   updatedAt: Date.now(),
                   appliedVersion,
+                  isActive: typeof item.active === 'boolean' ? item.active : indicator.isActive,
                   hasUpdate: false,
                 }
               : indicator
           )
         );
       } catch {
-        // Fallback to default code on error so the editor is not blank.
         setIndicators((prev) =>
           prev.map((indicator) =>
             indicator.id === selectedIndicatorId
@@ -231,16 +187,25 @@ export const useIndicators = (data: Candle[]) => {
     };
 
     fetchCode();
-  }, [selectedIndicatorId]);
+  }, [selectedIndicatorId, nameOverrides]);
 
   useEffect(() => {
-    const active = indicators.find((item) => item.isActive);
-    if (data.length > 0 && active) {
-      const period = active.name.includes('50') ? 50 : 200;
-      setIndicatorData(calculateEMA(data, period));
-    } else {
-      setIndicatorData([]);
+    if (!data.length) {
+      setIndicatorData({});
+      return;
     }
+    const activeIndicators = indicators.filter((item) => item.isActive);
+    if (!activeIndicators.length) {
+      setIndicatorData({});
+      return;
+    }
+    const series: Record<string, { time: string | number; value: number }[]> = {};
+    activeIndicators.forEach((indicator) => {
+      const digits = (indicator.name || indicator.id).match(/\d+/);
+      const period = digits ? parseInt(digits[0], 10) || 200 : 200;
+      series[indicator.id] = calculateEMA(data, period);
+    });
+    setIndicatorData(series);
   }, [data, indicators]);
 
   const createIndicator = (folderPath?: string) => {
@@ -249,6 +214,15 @@ export const useIndicators = (data: Candle[]) => {
     const id = `${baseName}_${now}`;
     const normalizedFolder = normalizeFolder(folderPath);
     const filePath = `${normalizedFolder}/${baseName}.py`;
+    const nextFolders = Array.from(new Set([...folders, normalizedFolder]));
+    setFolders(nextFolders);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(FOLDERS_KEY, JSON.stringify(nextFolders));
+      } catch {
+        /* ignore */
+      }
+    }
     const newIndicator: CustomIndicator = {
       id,
       name: 'New Indicator',
@@ -265,32 +239,66 @@ export const useIndicators = (data: Candle[]) => {
     };
     setIndicators((prev) => [...prev, newIndicator]);
     setSelectedIndicatorId(id);
-    persistSelectedId(id);
+    persistSelectedIndicatorId(id);
+    updateOrder([...indicatorOrder, filePath]);
     setNameOverrides((prev) => {
       const next = { ...prev, [id]: newIndicator.name };
-      persistNames(next);
+      persistIndicatorNames(next);
       return next;
     });
-    // Persist the new file immediately
     saveIndicator(id, newIndicator.code, newIndicator.name, filePath).catch(() => {
       /* ignore initial save errors */
     });
   };
 
-  const deleteIndicator = (id: string) => {
+  const addIndicatorFolder = (folderPath: string) => {
+    const normalized = normalizeFolder(folderPath);
+    setFolders((prev) => {
+      const next = Array.from(new Set([...prev, normalized]));
+      try {
+        window.localStorage.setItem(FOLDERS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
+  const removeIndicatorFolder = (folderPath: string) => {
+    const normalized = normalizeFolder(folderPath);
+    setFolders((prev) => {
+      const next = prev.filter((f) => normalizeSlashes(f) !== normalizeSlashes(normalized));
+      try {
+        window.localStorage.setItem(FOLDERS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
+  const deleteIndicator = async (id: string) => {
+    try {
+      await apiClient.deleteIndicator(id);
+    } catch (error) {
+      /* keep going even if backend delete fails */
+      console.warn('[indicator] delete failed', error);
+    }
     setIndicators((prev) => prev.filter((indicator) => indicator.id !== id));
     setSelectedIndicatorId((current) => {
       const next = current === id ? null : current;
-      persistSelectedId(next);
+      persistSelectedIndicatorId(next);
       return next;
     });
     setNameOverrides((prev) => {
       if (!prev[id]) return prev;
       const next = { ...prev };
       delete next[id];
-      persistNames(next);
+      persistIndicatorNames(next);
       return next;
     });
+    const remaining = indicators.filter((indicator) => indicator.id !== id).map((indicator) => normalizeSlashes(indicator.filePath || ''));
+    updateOrder(indicatorOrder.filter((path) => remaining.includes(normalizeSlashes(path))));
   };
 
   const saveIndicator = async (id: string, code: string, name?: string, filePathOverride?: string) => {
@@ -300,8 +308,15 @@ export const useIndicators = (data: Candle[]) => {
     const response = await apiClient.saveIndicator(id, payload);
     const item = response.item;
     const appliedVersion = item?.lastModified ?? Date.now();
+    const newId = item?.id || id;
+    const nextName = name || nameOverrides[id] || item?.name || currentIndicator?.name;
+    const nextFilePath = item?.filePath ?? resolvedPath ?? currentIndicator?.filePath ?? filePathOverride;
+
     setAppliedVersions((prev) => {
-      const updated = { ...prev, [id]: appliedVersion };
+      const updated = { ...prev, [newId]: appliedVersion };
+      if (newId !== id) {
+        delete updated[id];
+      }
       persistAppliedVersions(updated);
       return updated;
     });
@@ -311,9 +326,10 @@ export const useIndicators = (data: Candle[]) => {
         indicator.id === id
           ? {
               ...indicator,
+              id: newId,
               code,
-              name: name || nameOverrides[id] || indicator.name,
-              filePath: item?.filePath ?? indicator.filePath ?? filePathOverride,
+              name: nextName,
+              filePath: nextFilePath,
               lastModified: item?.lastModified ?? indicator.lastModified,
               sizeBytes: item?.sizeBytes ?? indicator.sizeBytes,
               updatedAt: Date.now(),
@@ -323,29 +339,67 @@ export const useIndicators = (data: Candle[]) => {
           : indicator
       )
     );
-    if (name) {
-      setNameOverrides((prev) => {
-        const next = { ...prev, [id]: name };
-        persistNames(next);
-        return next;
-      });
+
+    if (currentIndicator) {
+      const prevPath = normalizeSlashes(currentIndicator.filePath || '');
+      const nextPath = normalizeSlashes(nextFilePath);
+      if (nextPath) {
+        const reordered = indicatorOrder.length
+          ? indicatorOrder.map((path) => (normalizeSlashes(path) === prevPath ? nextPath : path))
+          : [nextPath];
+        if (!reordered.includes(nextPath)) {
+          reordered.push(nextPath);
+        }
+        updateOrder(reordered);
+      }
     }
+
+    setNameOverrides((prev) => {
+      const next = { ...prev, [newId]: nextName || prev[newId] || prev[id] };
+      if (newId !== id) {
+        delete next[id];
+      }
+      persistIndicatorNames(next);
+      return next;
+    });
+
+    setSelectedIndicatorId((current) => {
+      if (current === id || current === newId) {
+        persistSelectedIndicatorId(newId);
+        return newId;
+      }
+      return current;
+    });
   };
 
-  const toggleActiveIndicator = (id: string) => {
-    setIndicators((prev) =>
-      prev.map((indicator) =>
-        indicator.id === id ? { ...indicator, isActive: !indicator.isActive } : indicator
-      )
-    );
+  const toggleActiveIndicator = async (id: string) => {
+    const current = indicators.find((indicator) => indicator.id === id);
+    const nextValue = !current?.isActive;
+    setIndicators((prev) => prev.map((indicator) => (indicator.id === id ? { ...indicator, isActive: nextValue } : indicator)));
+    try {
+      await apiClient.setIndicatorActive(id, nextValue);
+    } catch (error) {
+      setIndicators((prev) => prev.map((indicator) => (indicator.id === id ? { ...indicator, isActive: !nextValue } : indicator)));
+      console.warn('[useIndicators] toggleActive failed', error);
+    }
   };
 
   const toggleVisibility = (id: string) => {
     setIndicators((prev) =>
-      prev.map((indicator) =>
-        indicator.id === id ? { ...indicator, isVisible: !indicator.isVisible } : indicator
-      )
+      prev.map((indicator) => (indicator.id === id ? { ...indicator, isVisible: !indicator.isVisible } : indicator))
     );
+  };
+
+  const updateIndicatorName = (id: string, name: string) => {
+    const safeName = name?.trim() || id;
+    setIndicators((prev) =>
+      prev.map((indicator) => (indicator.id === id ? { ...indicator, name: safeName, updatedAt: Date.now() } : indicator))
+    );
+    setNameOverrides((prev) => {
+      const next = { ...prev, [id]: safeName };
+      persistIndicatorNames(next);
+      return next;
+    });
   };
 
   const refreshFromDisk = async (id: string) => {
@@ -390,11 +444,13 @@ export const useIndicators = (data: Candle[]) => {
   return {
     indicators,
     indicatorData,
+    indicatorOrder,
+    setIndicatorOrder: updateOrder,
+    indicatorFolders: folders,
+    addIndicatorFolder,
+    removeIndicatorFolder,
     selectedIndicatorId,
-    setSelectedIndicatorId: (id: string | null) => {
-      setSelectedIndicatorId(id);
-      persistSelectedId(id);
-    },
+    setSelectedIndicatorId,
     activeIndicator,
     createIndicator,
     deleteIndicator,
@@ -402,5 +458,6 @@ export const useIndicators = (data: Candle[]) => {
     toggleActiveIndicator,
     toggleVisibility,
     refreshFromDisk,
+    updateIndicatorName,
   };
 };

@@ -17,11 +17,13 @@ Mapa completo do backend (Express) para agentes/LLMs: rotas, serviços, persist�
   - `strategyRoutes.js`: CRUD de arquivos .py em `server/strategies` (seed se vazio).
 - `server/src/services/`:
   - `dukascopyService.js`: orquestra job de import, baixa ticks via `dukascopy-node`, resolve range, converte para candles, grava em `data/` e `data/raw`, logs/progresso em Map.
+    - Submodulos: `services/dukascopy/paths.js` (paths/cleanup), `jobStore.js` (persistencia/boot id), `timeframes.js` (chunking), `dataUtils.js` (merge JSON), `candleWriter.js` (persistir candles).
   - `timeframeBuilder.js`: converte ticks para candles M1 e agrega para timeframes maiores.
   - `dataCacheService.js`: garante `data/`, lista assets/timeframes de arquivos, lê JSON de candles.
   - `normalizationService.js`: guarda configuracao em memória (timezone, tickSize, basis, gapQuant placeholder).
   - `indicatorFileService.js`: CRUD de indicadores .py (seed `ema_200.py` se vazio).
   - `strategyFileService.js`: CRUD de estrategias .py (seed `main.py` se vazio).
+  - Lean helpers: `services/lean/defaultAlgorithm.js` (fallback de algoritmo), `services/lean/parsers.js` (parse de equity/trades), usados por `leanService.js`.
 - `server/src/constants/`:
   - `assets.js`: mapeia simbolo -> instrumento Dukascopy e label.
   - `paths.js`: paths raiz/indicators/strategies.

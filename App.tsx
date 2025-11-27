@@ -10,7 +10,6 @@ import { useDataImport } from './hooks/useDataImport';
 import { useNormalizationSettings } from './hooks/useNormalizationSettings';
 import { AVAILABLE_TIMEFRAMES } from './constants/markets';
 import { ChartView } from './views/ChartView';
-import { IndicatorView } from './views/IndicatorView';
 import { DataSourcesView } from './views/DataSourcesView';
 import { DataNormalizationView } from './views/DataNormalizationView';
 import { StrategyView } from './views/StrategyView';
@@ -221,6 +220,7 @@ const AppContent: React.FC = () => {
             backtestResult={backtestResult}
             indicators={indicators.indicators}
             indicatorData={indicators.indicatorData}
+            indicatorOrder={indicators.indicatorOrder}
             activeSymbol={activeSymbol}
             onSymbolChange={setActiveSymbol}
             activeTimeframe={activeTimeframe}
@@ -239,20 +239,6 @@ const AppContent: React.FC = () => {
             ingesting={marketIngesting}
             error={marketError}
             onCancelLoad={cancelCurrentLoad}
-          />
-        );
-      case ViewState.CHART_INDICATOR:
-        return (
-          <IndicatorView
-            indicators={indicators.indicators}
-            selectedIndicatorId={indicators.selectedIndicatorId}
-            setSelectedIndicatorId={indicators.setSelectedIndicatorId}
-            activeIndicator={indicators.activeIndicator}
-            createIndicator={indicators.createIndicator}
-            deleteIndicator={indicators.deleteIndicator}
-            saveIndicator={indicators.saveIndicator}
-            toggleActiveIndicator={indicators.toggleActiveIndicator}
-            refreshFromDisk={indicators.refreshFromDisk}
           />
         );
       case ViewState.DATA:
@@ -302,6 +288,8 @@ const AppContent: React.FC = () => {
             onRunLeanBacktest={handleRunLeanBacktest}
             onNavigateToChart={() => setActiveView(ViewState.CHART)}
             strategies={strategies.strategies}
+            strategyOrder={strategies.strategyOrder}
+            setStrategyOrder={strategies.setStrategyOrder}
             selectedStrategyId={strategies.selectedId}
             setSelectedStrategyId={strategies.setSelectedId}
             activeStrategy={strategies.activeStrategy}
@@ -310,14 +298,29 @@ const AppContent: React.FC = () => {
             deleteStrategy={strategies.deleteStrategy}
             refreshFromDisk={(id) => strategies.refreshFromDisk(id)}
             saveStrategy={(id, code) => strategies.saveStrategy(id, code)}
-            onRefreshFromDisk={() => strategies.selectedId && strategies.refreshFromDisk(strategies.selectedId)}
+            updateStrategyPath={strategies.updateStrategyPath}
             onSave={(code) => strategies.selectedId && strategies.saveStrategy(strategies.selectedId, code)}
             leanStatus={leanBacktest.status}
             leanLogs={leanBacktest.logs}
             leanJobId={leanBacktest.jobId}
             leanError={leanBacktest.error}
-            leanParams={leanBacktest.params}
-            onLeanParamsChange={(next) => leanBacktest.setParams(next)}
+          leanParams={leanBacktest.params}
+          onLeanParamsChange={(next) => leanBacktest.setParams(next)}
+          indicators={indicators.indicators}
+          indicatorOrder={indicators.indicatorOrder}
+          setIndicatorOrder={indicators.setIndicatorOrder}
+          indicatorFolders={indicators.indicatorFolders}
+          addIndicatorFolder={indicators.addIndicatorFolder}
+          removeIndicatorFolder={indicators.removeIndicatorFolder}
+          selectedIndicatorId={indicators.selectedIndicatorId}
+          setSelectedIndicatorId={indicators.setSelectedIndicatorId}
+          activeIndicator={indicators.activeIndicator}
+          createIndicator={indicators.createIndicator}
+          deleteIndicator={indicators.deleteIndicator}
+            saveIndicator={indicators.saveIndicator}
+            toggleActiveIndicator={indicators.toggleActiveIndicator}
+            refreshIndicatorFromDisk={indicators.refreshFromDisk}
+            updateIndicatorName={indicators.updateIndicatorName}
           />
         );
       case ViewState.ANALYSIS:
@@ -343,7 +346,12 @@ const AppContent: React.FC = () => {
           onRunBacktest={handleRunBacktest}
         />
         <div className="flex-1 px-10 py-8 overflow-y-auto min-h-0">
-          <div className="h-full flex">{renderView()}</div>
+          <div
+            className={`${[ViewState.CHART, ViewState.STRATEGY].includes(activeView) ? 'h-full' : 'min-h-full'
+              } flex`}
+          >
+            {renderView()}
+          </div>
         </div>
       </main>
     </div>
