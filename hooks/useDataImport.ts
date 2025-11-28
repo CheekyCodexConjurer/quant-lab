@@ -12,6 +12,12 @@ type FrameStatus = {
   frameStage?: string;
 };
 
+type ExistingPreview = {
+  asset: string;
+  hasExisting: boolean;
+  existingRanges?: Record<string, { start?: string; end?: string; count?: number }>;
+};
+
 const formatLogs = (logs: JobLog[] = []) =>
   logs.map((log) => `[${log.timestamp || new Date().toISOString()}] ${log.message}`);
 
@@ -27,6 +33,7 @@ export const useDataImport = (asset: string, _timeframe: string) => {
   const [progress, setProgress] = useState(0);
   const [frameStatus, setFrameStatus] = useState<FrameStatus>({});
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [existingPreview, setExistingPreview] = useState<ExistingPreview | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPolling = () => {
@@ -197,8 +204,32 @@ export const useDataImport = (asset: string, _timeframe: string) => {
 
   const checkExisting = async () => {
     const payload = { asset: asset.toUpperCase() };
-    return apiClient.checkDukascopy(payload);
+    const preview = await apiClient.checkDukascopy(payload);
+    setExistingPreview(preview);
+    return preview;
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    const bootstrapExisting = async () => {
+      try {
+        const payload = { asset: asset.toUpperCase() };
+        const preview = await apiClient.checkDukascopy(payload);
+        if (cancelled) return;
+        setExistingPreview(preview);
+      } catch {
+        if (!cancelled) {
+          setExistingPreview(null);
+        }
+      }
+    };
+    if (asset) {
+      bootstrapExisting();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [asset]);
 
   const importCustom = async (filename: string) => {
     setStatus('running');
@@ -216,6 +247,8 @@ export const useDataImport = (asset: string, _timeframe: string) => {
     importDukascopy,
     importCustom,
     checkExisting,
+    existingPreview,
+    hasExisting: Boolean(existingPreview?.hasExisting),
     lastUpdated,
     reset: () => {
       stopPolling();

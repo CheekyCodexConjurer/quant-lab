@@ -38,6 +38,11 @@ export interface LicenseState {
   key?: string;
 }
 
+export interface UserProfile {
+  name: string;
+  email?: string;
+}
+
 export interface CustomIndicator {
   id: string;
   name: string;

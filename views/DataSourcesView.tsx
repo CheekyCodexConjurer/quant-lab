@@ -28,6 +28,12 @@ type DataSourcesViewProps = {
   activeSymbol: string;
   onSymbolChange: (symbol: string) => void;
   activeTimeframe: string;
+  existingInfo?: {
+    asset: string;
+    hasExisting: boolean;
+    existingRanges?: Record<string, { start?: string; end?: string; count?: number }>;
+  };
+  hasExisting?: boolean;
   frameStatus?: {
     currentFrame?: string | null;
     frameIndex?: number;
@@ -57,13 +63,9 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
   onSymbolChange,
   activeTimeframe,
   frameStatus,
+  existingInfo,
+  hasExisting,
 }) => {
-  const [showPrompt, setShowPrompt] = React.useState(false);
-  const [existingInfo, setExistingInfo] = React.useState<{
-    asset: string;
-    hasExisting: boolean;
-    existingRanges?: Record<string, { start?: string; end?: string; count?: number }>;
-  } | null>(null);
   const [isChecking, setIsChecking] = React.useState(false);
 
   const handleMarketChange = (market: string) => {
@@ -77,13 +79,8 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
   const handleDukascopyImport = async () => {
     try {
       setIsChecking(true);
-      const preview = await onCheckExisting();
-      setExistingInfo(preview);
-      if (preview?.hasExisting) {
-        setShowPrompt(true);
-      } else {
-        await onDukascopyImport({});
-      }
+      await onCheckExisting();
+      await onDukascopyImport({});
     } catch (error) {
       console.warn('[import] check existing failed', error);
       await onDukascopyImport({});
@@ -93,7 +90,6 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
   };
 
   const runImportWithMode = async (mode: 'continue' | 'restart') => {
-    setShowPrompt(false);
     await onDukascopyImport({ mode });
   };
 
@@ -150,13 +146,48 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
               </div>
             </div>
           </div>
+
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-[11px] text-slate-500">
+              {existingInfo?.hasExisting && existingInfo.existingRanges ? (
+                <span>
+                  Existing data detected:&nbsp;
+                  {Object.entries(existingInfo.existingRanges)
+                    .map(([frame, range]) => `${frame.toUpperCase()}: ${range.start || '?'} -> ${range.end || '?'}`)
+                    .join(' | ')}
+                </span>
+              ) : (
+                <span>No existing downloads detected for this asset.</span>
+              )}
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2 sm:justify-end mt-2 sm:mt-0">
+              <button
+                type="button"
+                onClick={() => runImportWithMode('restart')}
+                disabled={importStatus === 'running' || isChecking}
+                className="w-full sm:w-auto px-3 py-2.5 bg-slate-900 text-white text-xs font-bold uppercase tracking-widest hover:bg-slate-800 disabled:opacity-60 transition-colors"
+              >
+                New import
+              </button>
+              <button
+                type="button"
+                onClick={() => runImportWithMode('continue')}
+                disabled={!hasExisting || importStatus === 'running' || isChecking}
+                className="w-full sm:w-auto px-3 py-2.5 text-xs font-bold uppercase tracking-widest border rounded-sm transition-colors
+                  disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200
+                  enabled:bg-white enabled:text-slate-900 enabled:border-slate-200 hover:enabled:border-slate-400"
+              >
+                Resume download
+              </button>
+            </div>
+          </div>
           <div className="relative z-10 mt-auto pt-6 border-t border-slate-50">
             <button
               onClick={handleDukascopyImport}
               disabled={importStatus === 'running' || isChecking}
               className="w-full py-3 bg-slate-900 text-white text-xs font-bold uppercase tracking-widest hover:bg-slate-800 transition-colors disabled:opacity-50"
             >
-              {importStatus === 'running' ? 'Downloading...' : isChecking ? 'Checking data...' : 'Import from Dukascopy'}
+              {importStatus === 'running' ? 'Downloading...' : isChecking ? 'Checking data...' : 'Quick import (auto mode)'}
             </button>
           </div>
         </div>
@@ -202,52 +233,7 @@ export const DataSourcesView: React.FC<DataSourcesViewProps> = ({
         lastUpdated={lastUpdated}
       />
 
-      {
-        showPrompt && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div className="bg-white rounded-sm shadow-lg border border-slate-200 w-[420px] max-w-[90%]">
-              <div className="px-6 py-4 border-b border-slate-100">
-                <h4 className="text-sm font-semibold text-slate-900">Existing data detected</h4>
-                <p className="text-xs text-slate-500 mt-1">
-                  We found previous downloads for {existingInfo?.asset || activeSymbol}. Choose how to proceed.
-                </p>
-                {existingInfo?.existingRanges && (
-                  <div className="mt-3 bg-slate-50 border border-slate-100 rounded px-3 py-2 text-[11px] text-slate-600 space-y-1">
-                    {Object.entries(existingInfo.existingRanges).map(([frame, range]) => (
-                      <div key={frame} className="flex justify-between">
-                        <span className="font-semibold uppercase">{frame}</span>
-                        <span className="text-right">
-                          {range.start || '?'} -&gt; {range.end || '?'} ({range.count || 0} records)
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="px-6 py-4 flex flex-col gap-2">
-                <button
-                  onClick={() => runImportWithMode('continue')}
-                  className="w-full py-2.5 bg-slate-900 text-white text-xs font-bold uppercase tracking-widest hover:bg-slate-800 transition-colors"
-                >
-                  Continue from last saved point
-                </button>
-                <button
-                  onClick={() => runImportWithMode('restart')}
-                  className="w-full py-2.5 bg-white border border-slate-200 text-xs font-bold uppercase tracking-widest text-slate-900 hover:border-slate-400 transition-colors"
-                >
-                  Reimport full history
-                </button>
-                <button
-                  onClick={() => setShowPrompt(false)}
-                  className="w-full py-2.5 text-xs font-semibold text-slate-500 hover:text-slate-700"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      }
+
     </MainContent >
   );
 };

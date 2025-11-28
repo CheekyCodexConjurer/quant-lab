@@ -12,12 +12,14 @@ const TIMEFRAME_TO_MS = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_RANGE_DAYS = 14;
 const CHUNK_DAYS = {
-  m1: 30,
-  m5: 60,
-  m15: 90,
-  m30: 120,
-  h1: 180,
-  h4: 365,
+  // Valores mais conservadores para reduzir o volume por chamada
+  // e diminuir a probabilidade de timeouts em ativos pesados.
+  m1: 10,
+  m5: 20,
+  m15: 30,
+  m30: 45,
+  h1: 90,
+  h4: 180,
   d1: 0,
   mn1: 0,
 };

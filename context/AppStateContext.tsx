@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { AVAILABLE_ASSETS, AVAILABLE_TIMEFRAMES } from '../constants/markets';
 import { TIMEZONE_OPTIONS } from '../constants/timezones';
-import { ChartAppearance, ViewState, LicenseState } from '../types';
+import { ChartAppearance, ViewState, LicenseState, UserProfile } from '../types';
 
 type AppState = {
   activeView: ViewState;
@@ -22,6 +22,8 @@ type AppState = {
   setChartAppearance: (appearance: Partial<ChartAppearance>) => void;
   license: LicenseState;
   setLicense: (next: LicenseState) => void;
+  user: UserProfile | null;
+  setUser: (user: UserProfile | null) => void;
 };
 
 const AppStateContext = createContext<AppState | undefined>(undefined);
@@ -32,6 +34,7 @@ const DATASETS_STORAGE_KEY = 'thelab.downloadedAssets';
 const APPEARANCE_STORAGE_KEY = 'thelab.chartAppearance';
 const DEFAULT_TIMEZONE_ID = 'America/Sao_Paulo';
 const LICENSE_STORAGE_KEY = 'thelab.licenseState';
+const USER_STORAGE_KEY = 'thelab.userProfile';
 
 const loadPinnedTimeframes = () => {
   if (typeof window === 'undefined') return [...AVAILABLE_TIMEFRAMES];
@@ -131,6 +134,23 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     }
     return { mode: 'internal' };
   });
+  const [user, setUserState] = useState<UserProfile | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const stored = window.localStorage.getItem(USER_STORAGE_KEY);
+      if (!stored) return null;
+      const parsed = JSON.parse(stored);
+      if (parsed && typeof parsed.name === 'string') {
+        return {
+          name: parsed.name,
+          email: typeof parsed.email === 'string' ? parsed.email : undefined,
+        };
+      }
+    } catch {
+      /* ignore */
+    }
+    return null;
+  });
 
   useEffect(() => {
     try {
@@ -171,6 +191,24 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
       /* ignore */
     }
   }, [license]);
+
+  useEffect(() => {
+    try {
+      if (!user) {
+        window.localStorage.removeItem(USER_STORAGE_KEY);
+      } else {
+        window.localStorage.setItem(
+          USER_STORAGE_KEY,
+          JSON.stringify({
+            name: user.name,
+            email: user.email || undefined,
+          })
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [user]);
 
   const setAvailableTimeframes = (asset: string, frames: string[]) => {
     const normalizedAsset = String(asset || '').toUpperCase();
@@ -219,6 +257,17 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     });
   };
 
+  const setUser = (next: UserProfile | null) => {
+    if (!next || !next.name?.trim()) {
+      setUserState(null);
+      return;
+    }
+    setUserState({
+      name: next.name.trim(),
+      email: next.email?.trim() || undefined,
+    });
+  };
+
   return (
     <AppStateContext.Provider
       value={{
@@ -240,6 +289,8 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
         setChartAppearance,
         license,
         setLicense,
+        user,
+        setUser,
       }}
     >
       {children}

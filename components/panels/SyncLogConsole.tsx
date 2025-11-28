@@ -67,8 +67,6 @@ export const SyncLogConsole: React.FC<SyncLogConsoleProps> = ({
   onCancel,
 }) => {
   const endRef = useRef<HTMLDivElement>(null);
-  const visibleLogs = logs.slice(-300);
-  const hiddenCount = Math.max(0, logs.length - visibleLogs.length);
 
   useEffect(() => {
     if (endRef.current) {
@@ -141,20 +139,17 @@ export const SyncLogConsole: React.FC<SyncLogConsoleProps> = ({
             <FolderOpen size={24} className="mb-2 opacity-50" />
             <p>Waiting for import command...</p>
           </div>
-        ) : visibleLogs.length === 0 ? (
+        ) : logs.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-600">
             <p>No logs yet.</p>
           </div>
         ) : (
           <>
-            {hiddenCount > 0 && (
-              <div className="text-[11px] text-slate-500 mb-1">Showing last {visibleLogs.length} lines (hidden {hiddenCount})</div>
-            )}
-            {visibleLogs.map((log, index) => (
-            <div key={`${log}-${index}`} className="break-words">
-              <span className="text-slate-500 mr-2">{'>'}</span>
-              {log}
-            </div>
+            {logs.map((log, index) => (
+              <div key={`${log}-${index}`} className="break-words">
+                <span className="text-slate-500 mr-2">{'>'}</span>
+                {log}
+              </div>
             ))}
           </>
         )}

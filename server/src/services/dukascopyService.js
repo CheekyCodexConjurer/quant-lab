@@ -17,10 +17,33 @@ const mockStep = (message) => ({
 });
 
 // Timeout para cada chamada de chunk em getHistoricalRates.
-// Para ativos como CL1! em M1, 60s era insuficiente; ampliamos para 5 minutos
-// para evitar falhas prematuras em redes mais lentas ou respostas mais pesadas.
+// Para ativos como CL1! em M1/M5, 60s era insuficiente; ampliamos para 5 minutos
+// e passamos a dividir o chunk em sub-chunks menores quando um timeout acontece,
+// em vez de simplesmente falhar o job inteiro.
 const CHUNK_TIMEOUT_MS = 5 * 60 * 1000;
 const CHUNK_RETRIES = 2;
+const MAX_CHUNK_SPLIT_DEPTH = 4;
+const MIN_CHUNK_SPLIT_RANGE_MS = 10 * DAY_MS; // ~10 dias por sub-chunk alvo
+
+const isTimeoutError = (error) => {
+  if (!error) return false;
+  const message = error.message || String(error);
+  return message.toLowerCase().includes('timed out after');
+};
+
+const splitChunkRange = (chunk) => {
+  const fromMs = chunk.from.getTime();
+  const toMs = chunk.to.getTime();
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs <= fromMs) {
+    return [chunk, null];
+  }
+  const midMs = fromMs + Math.floor((toMs - fromMs) / 2);
+  const mid = new Date(midMs);
+  return [
+    { from: chunk.from, to: mid },
+    { from: mid, to: chunk.to },
+  ];
+};
 
 const pickEarliest = (asset, timeframe) => {
   const map = EARLIEST[asset] || {};
@@ -195,6 +218,82 @@ const safeAppendJsonl = (filepath, data) => {
     }
   } finally {
     fs.closeSync(fd);
+  }
+};
+
+const fetchChunkWithSplits = async ({ jobId, source, frame, chunk, chunkIndex, chunkCount, depth = 0 }) => {
+  const labelBase = `chunk ${chunkIndex + 1}/${chunkCount} (${frame})`;
+  const chunkLabel = `${chunk.from.toISOString()} -> ${chunk.to.toISOString()}`;
+  const canSplit =
+    depth < MAX_CHUNK_SPLIT_DEPTH &&
+    chunk.to.getTime() - chunk.from.getTime() > MIN_CHUNK_SPLIT_RANGE_MS;
+
+  let attempt = 0;
+
+  // Tenta baixar o chunk atual; em caso de timeout, pode dividir o range em sub-chunks menores.
+  // Isso reduz o volume por chamada ao dukascopy-node e evita que jobs longos morram em um único timeout.
+  // Mantemos um pequeno número de tentativas por range antes de desistir definitivamente.
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    if (jobs.get(jobId)?.status === 'canceled') {
+      pushJobLog(jobId, 'Chunk canceled before completion.');
+      return [];
+    }
+
+    try {
+      const data = await withTimeout(
+        getHistoricalRates({
+          instrument: source.instrument,
+          dates: { from: chunk.from, to: chunk.to },
+          timeframe: frame,
+          format: 'json',
+        }),
+        CHUNK_TIMEOUT_MS,
+        labelBase
+      );
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      const message = err?.message || String(err);
+      const timeout = isTimeoutError(err);
+
+      // Se estourou timeout e ainda podemos dividir o range, faz split imediato em vez de repetir o mesmo chunk grande.
+      if (timeout && canSplit) {
+        const nextDepth = depth + 1;
+        pushJobLog(
+          jobId,
+          `${labelBase} timed out for range ${chunkLabel}; splitting into smaller sub-chunks (depth=${nextDepth}).`
+        );
+        const [left, right] = splitChunkRange(chunk);
+        const leftData = await fetchChunkWithSplits({
+          jobId,
+          source,
+          frame,
+          chunk: left,
+          chunkIndex,
+          chunkCount,
+          depth: nextDepth,
+        });
+        const rightData = right
+          ? await fetchChunkWithSplits({
+              jobId,
+              source,
+              frame,
+              chunk: right,
+              chunkIndex,
+              chunkCount,
+              depth: nextDepth,
+            })
+          : [];
+        return [...leftData, ...rightData];
+      }
+
+      attempt += 1;
+      if (attempt > CHUNK_RETRIES) {
+        throw err;
+      }
+
+      pushJobLog(jobId, `Retrying ${labelBase} after error: ${message}`);
+    }
   }
 };
 
@@ -478,36 +577,14 @@ const executeJob = async (job) => {
         const chunkLabel = `${chunk.from.toISOString()} -> ${chunk.to.toISOString()}`;
         const chunkRange = { fromIso: chunk.from.toISOString(), toIso: chunk.to.toISOString() };
         try {
-          let data = [];
-          let attempt = 0;
-          while (attempt <= CHUNK_RETRIES) {
-            if (jobs.get(job.id)?.status === 'canceled') {
-              pushJobLog(job.id, 'Chunk canceled before completion.');
-              return;
-            }
-            try {
-              data = await withTimeout(
-                getHistoricalRates({
-                  instrument: source.instrument,
-                  dates: { from: chunk.from, to: chunk.to },
-                  timeframe: frame,
-                  format: 'json',
-                }),
-                CHUNK_TIMEOUT_MS,
-                `chunk ${cIdx + 1}/${chunks.length} (${frame})`
-              );
-              break;
-            } catch (err) {
-              attempt += 1;
-              if (attempt > CHUNK_RETRIES) {
-                throw err;
-              }
-              pushJobLog(
-                job.id,
-                `Retrying chunk ${cIdx + 1}/${chunks.length} (${frame}) after error: ${err.message || err}`
-              );
-            }
-          }
+          const data = await fetchChunkWithSplits({
+            jobId: job.id,
+            source,
+            frame,
+            chunk,
+            chunkIndex: cIdx,
+            chunkCount: chunks.length,
+          });
           if (Array.isArray(data) && data.length > 0) {
             const normalized = data.map((row) => {
               if (isTickFrame) return row;
@@ -521,8 +598,12 @@ const executeJob = async (job) => {
               return timeIso ? { ...row, time: timeIso } : row;
             });
             writeCandlesToDisk(job.asset, frame, normalized, chunkRange);
-            totalCount += normalized.length;
-            pushJobLog(job.id, `Chunk ${cIdx + 1}/${chunks.length} (${frame}) ok: ${data.length} rows (${chunkLabel})`);
+            const rowsCount = normalized.length;
+            totalCount += rowsCount;
+            pushJobLog(
+              job.id,
+              `Chunk ${cIdx + 1}/${chunks.length} (${frame}) ok: ${rowsCount} rows (${chunkLabel})`
+            );
             pushJobLog(
               job.id,
               `Persisted chunk ${cIdx + 1}/${chunks.length} (${frame}) to disk (approx count=${totalCount})`
@@ -547,8 +628,25 @@ const executeJob = async (job) => {
       });
 
       const effectiveCount = totalCount;
+      const newCount = totalCount - existingCount;
+
+      // Nenhum dado em absoluto (nem existente, nem novo).
       if (!effectiveCount) {
         pushJobLog(job.id, `No data returned for ${frame} (${range.fromIso} -> ${range.toIso})`);
+        setFrameState(job.id, {
+          frameProgress: 1,
+          frameStage: 'skipped',
+        });
+        continue;
+      }
+
+      // Modo continue, mas nenhum candle novo foi retornado para um timeframe que já tinha dados.
+      if (mode === 'continue' && existingCount > 0 && newCount <= 0) {
+        pushJobLog(
+          job.id,
+          `No new data for ${frame}; existing range already covers ${existingRange?.start || '?'} -> ${existingRange?.end || '?'
+          } (count=${existingCount})`
+        );
         setFrameState(job.id, {
           frameProgress: 1,
           frameStage: 'skipped',
@@ -564,7 +662,16 @@ const executeJob = async (job) => {
         pushJobLog(job.id, `Downloaded ${formattedCount} ticks (${startRange} -> ${endRange})`);
         pushJobLog(job.id, 'Persisted raw tick file (data/raw)');
       } else {
-        pushJobLog(job.id, `Downloaded ${effectiveCount} ${frame} candles`);
+        const formattedTotal = Number(effectiveCount).toLocaleString('en-US');
+        const formattedNew = Number(newCount).toLocaleString('en-US');
+        if (mode === 'continue' && existingCount > 0) {
+          pushJobLog(
+            job.id,
+            `Downloaded ${formattedNew} new ${frame} candles (total=${formattedTotal})`
+          );
+        } else {
+          pushJobLog(job.id, `Downloaded ${formattedTotal} ${frame} candles`);
+        }
         pushJobLog(job.id, `Saved ${frame} candles to data-cache`);
       }
 

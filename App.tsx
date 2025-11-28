@@ -262,6 +262,8 @@ const AppContent: React.FC = () => {
             progress={dataImport.progress}
             lastUpdated={dataImport.lastUpdated}
             frameStatus={dataImport.frameStatus}
+            existingInfo={dataImport.existingPreview || undefined}
+            hasExisting={dataImport.hasExisting}
             activeSymbol={importSymbol}
             onSymbolChange={setImportSymbol}
             activeTimeframe={importTimeframe}

@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+const path = require('path');
 const { hydrateJobsFromDisk, serverBootId } = require('./services/dukascopyService');
 const importRoutes = require('./routes/importRoutes');
 const normalizationRoutes = require('./routes/normalizationRoutes');
@@ -33,6 +34,17 @@ app.use('/api/indicators', indicatorRoutes);
 app.use('/api/strategies', strategyRoutes);
 app.use('/api/lean', leanRoutes);
 app.use('/api/license', licenseRoutes);
+
+const distPath = path.resolve(__dirname, '..', '..', 'dist');
+
+app.use(express.static(distPath));
+
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    return next();
+  }
+  res.sendFile(path.join(distPath, 'index.html'));
+});
 
 hydrateJobsFromDisk();
 
