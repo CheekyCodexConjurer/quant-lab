@@ -15,28 +15,41 @@ const ensureDir = (dirPath) => {
 
 const deleteExistingAssetData = (asset) => {
   const lower = asset.toLowerCase();
-  const files = [
+
+  // Apaga arquivos de ticks associados ao asset
+  const tickFiles = [
     path.join(RAW_DIR, `${lower}-ticks.json`),
     path.join(RAW_DIR, `${lower}-ticks.jsonl`),
     path.join(RAW_DIR, `${lower}-ticks-meta.json`),
-    path.join(DATA_DIR, `${lower}-m1.json`),
-    path.join(DATA_DIR, `${lower}-m5.json`),
-    path.join(DATA_DIR, `${lower}-m15.json`),
-    path.join(DATA_DIR, `${lower}-m30.json`),
-    path.join(DATA_DIR, `${lower}-h1.json`),
-    path.join(DATA_DIR, `${lower}-h4.json`),
-    path.join(DATA_DIR, `${lower}-d1.json`),
-    path.join(DATA_DIR, `${lower}-mn1.json`),
   ];
-  files.forEach((file) => {
+  tickFiles.forEach((file) => {
     if (fs.existsSync(file)) {
       try {
         fs.unlinkSync(file);
       } catch (error) {
-        console.warn('[dukascopy] failed to delete file during restart mode', file, error);
+        console.warn('[dukascopy] failed to delete tick file during restart mode', file, error);
       }
     }
   });
+
+  // Apaga todos os segmentos e metadados de candles (m1, h1, etc) para o asset
+  try {
+    if (fs.existsSync(DATA_DIR)) {
+      const entries = fs.readdirSync(DATA_DIR);
+      entries.forEach((name) => {
+        if (!name.endsWith('.json')) return;
+        if (!name.startsWith(`${lower}-`)) return;
+        const file = path.join(DATA_DIR, name);
+        try {
+          fs.unlinkSync(file);
+        } catch (error) {
+          console.warn('[dukascopy] failed to delete data file during restart mode', file, error);
+        }
+      });
+    }
+  } catch (error) {
+    console.warn('[dukascopy] failed to scan DATA_DIR during restart mode', error);
+  }
 };
 
 module.exports = {

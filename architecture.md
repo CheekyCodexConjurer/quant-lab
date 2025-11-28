@@ -16,7 +16,7 @@ Visao completa para LLMs do frontend, backend, fluxo de dados, Lean e Dukascopy.
 - Servicos e utils: `services/api/client.ts` (REST), `services/backtestEngine.ts` (SMA mock), `utils/timeFormat.ts`, `utils/mockData.ts`, `utils/indicators.ts`, `utils/gapQuantization.ts`, `utils/path.ts`, `utils/storage/indicatorStorage.ts`, `utils/leanResultAdapter.ts`. Constantes: `constants/markets.ts`, `constants/timeframes.ts`, `constants/timezones.ts`.
 - Aparencia/persistencia: `ChartStyleMenu` ajusta `ChartAppearance` no contexto; configuracoes de aparencia, datasets baixados e versoes aplicadas de indicadores/estrategias sao salvos em localStorage.
 - Config frontend: `vite.config.ts` (alias @, porta via `VITE_DEV_PORT` ou 3070), `tsconfig.json` (target ES2022, jsx react-jsx), `metadata.json`, `launcher.bat` (instala deps e inicia front/back).
-- UI/UX: Tailwind via CDN, fonte Inter, light-mode. Chart responsivo com `ResizeObserver`; sem roteamento, views trocadas por `ViewState`.
+- UI/UX: Tailwind via CDN, fonte Inter, light-mode. Est�tica minimalista, focada em layout limpo, sim�trico, com cantos levemente arredondados, poucos botoes aparentes e preferindo menus/a�oes contextuais discretos (en-US) por padr�o.
 - Testes frontend: inexistentes (somente backend tem testes).
 
 ## Backend
@@ -68,3 +68,5 @@ Visao completa para LLMs do frontend, backend, fluxo de dados, Lean e Dukascopy.
 - Dukascopy: via `dukascopy-node` no backend (rede externa).
 - Lean: integrado localmente pelo frontend chamando CLI (workspaces locais, sem backend proprio).
 - Repositorios de referencia: listados em `views/RepositoryView.tsx`.
+
+

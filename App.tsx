@@ -44,6 +44,7 @@ const AppContent: React.FC = () => {
     setDownloadedAssets,
     chartAppearance,
     setChartAppearance,
+    license,
   } = useAppState();
   const marketData = useIncrementalMarketData();
   const {
@@ -347,6 +348,7 @@ const AppContent: React.FC = () => {
           activeTimeframe={activeTimeframe}
           repoStatus={repoStatus}
           onRunBacktest={handleRunBacktest}
+          licenseMode={license.mode}
         />
         <div className="flex-1 px-10 py-8 overflow-y-auto min-h-0">
           <div

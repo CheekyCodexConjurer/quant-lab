@@ -7,6 +7,7 @@ type MainHeaderProps = {
   activeTimeframe: string;
   repoStatus: 'disconnected' | 'syncing' | 'synced' | 'error';
   onRunBacktest: () => void;
+  licenseMode?: 'internal' | 'early-access' | 'expired';
 };
 
 const titleMap: Record<ViewState, string> = {
@@ -26,12 +27,22 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
   activeTimeframe,
   repoStatus: _repoStatus,
   onRunBacktest: _onRunBacktest,
+  licenseMode = 'internal',
 }) => {
   const title = titleMap[activeView];
 
+  const badgeTone =
+    licenseMode === 'early-access'
+      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      : licenseMode === 'expired'
+        ? 'bg-rose-50 text-rose-700 border-rose-200'
+        : 'bg-slate-100 text-slate-600 border-slate-200';
+  const badgeLabel =
+    licenseMode === 'early-access' ? 'EARLY ACCESS' : licenseMode === 'expired' ? 'LICENSE EXPIRED' : 'INTERNAL MODE';
+
   return (
     <header className="h-20 bg-[#fafafa] flex items-center px-10 border-b border-transparent z-10">
-      <div className="space-y-1">
+      <div className="space-y-1 flex-1">
         {title ? <h2 className="text-2xl font-normal text-slate-800 tracking-tight">{title}</h2> : null}
         {activeView === ViewState.CHART && (
           <div className="flex items-center gap-2">
@@ -41,6 +52,9 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
             </code>
           </div>
         )}
+      </div>
+      <div className="flex items-center gap-3">
+        <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${badgeTone}`}>{badgeLabel}</span>
       </div>
     </header>
   );

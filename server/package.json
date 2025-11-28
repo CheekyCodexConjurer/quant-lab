@@ -5,7 +5,7 @@
   "description": "Local backend for The Lab (dukascopy integration placeholder)",
   "main": "src/index.js",
   "scripts": {
-    "dev": "nodemon src/index.js",
+    "dev": "node scripts/killPort.js && nodemon src/index.js",
     "start": "node src/index.js",
     "test": "node test/timeframeBuilder.test.js && node test/indicatorFileService.test.js"
   },

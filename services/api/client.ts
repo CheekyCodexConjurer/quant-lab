@@ -264,4 +264,26 @@ export const apiClient = {
     }
     return res.json();
   },
+
+  async validateLicenseKey(key: string) {
+    try {
+      const res = await fetch(`${BASE_URL}/api/license/validate`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ key }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const message = body?.error || 'Failed to validate license key';
+        throw new Error(message);
+      }
+      return res.json();
+    } catch (error) {
+      const err = error as Error & { isNetworkError?: boolean };
+      if (err && typeof err.message === 'string' && !err.isNetworkError) {
+        err.isNetworkError = true;
+      }
+      throw err;
+    }
+  },
 };

@@ -8,6 +8,7 @@ const dataRoutes = require('./routes/dataRoutes');
 const indicatorRoutes = require('./routes/indicatorRoutes');
 const strategyRoutes = require('./routes/strategyRoutes');
 const leanRoutes = require('./routes/leanRoutes');
+const licenseRoutes = require('./routes/licenseRoutes');
 
 const PORT = process.env.SERVER_PORT || 4800;
 
@@ -31,6 +32,7 @@ app.use('/api/data', dataRoutes);
 app.use('/api/indicators', indicatorRoutes);
 app.use('/api/strategies', strategyRoutes);
 app.use('/api/lean', leanRoutes);
+app.use('/api/license', licenseRoutes);
 
 hydrateJobsFromDisk();
 

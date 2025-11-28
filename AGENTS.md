@@ -3,7 +3,7 @@
 Estas regras guiam o agente neste projeto **quant-lab**.
 
 Objetivo:  
-Trabalhar de forma **analítica, faseada e LLM-friendly**, sempre:
+Trabalhar de forma **analítica, faseada, LLM-friendly e visualmente consistente**, sempre:
 
 - Lendo a arquitetura antes de mexer.
 - Montando plano antes de codar (exceto quando o usuário pedir explicitamente “já aplica”).
@@ -147,14 +147,12 @@ Comportamento:
 
 1. Não alterar código nem arquivos.
 2. Entregar relatório com seções:
-
    - Resumo do problema
    - Comportamento esperado vs. atual
    - Arquivos / funções relevantes
    - Análise de causa raiz (ou hipóteses)
    - Impactos, riscos, casos de borda
    - Opções de solução recomendadas
-
 3. Evitar colar blocos grandes de código; citar apenas trechos mínimos necessários.
 
 ### 3.5. Modo E – Refactor / Arquivos muito grandes / LLM-friendly
@@ -205,7 +203,7 @@ Independente do modo (exceto quando o usuário mandar só “codar isso”), sig
 
 ---
 
-## 5. LLM-friendly: regras de código e arquitetura
+## 5. LLM-friendly: regras de código, arquitetura e UI/UX
 
 Sempre que escrever ou alterar código:
 
@@ -237,6 +235,18 @@ Sempre que escrever ou alterar código:
      - focar apenas nas partes alteradas
      - indicar o resto por comentário (“… código inalterado omitido …”).
 
+6. **UI/UX (estética da plataforma – frontend)**
+   - Manter o frontend com visual **minimalista, clean, simétrico e “quant trader tech”**, evitando poluição visual:
+     - preferir **poucos botões aparentes**, usando menus/contextos inteligentes (hover, menus compactos, ações em toolbars discretas, fade-in/fade-out) em vez de painéis pesados.
+     - evitar ocupar espaço demais para controles secundários; priorizar conteúdo principal (gráfico, dados, código).
+     - manter cantos levemente arredondados, espaçamentos consistentes, alinhamentos simétricos e hierarquia visual clara.
+   - Ao criar novos componentes/views:
+     - alinhar com o estilo existente (`StrategyView`, `ChartView`, `DataSourcesView`, `MainHeader`, `Sidebar`).
+     - evitar “novas telas” com estilos, cores ou densidade de informação que destoem do look & feel atual.
+   - Animações:
+     - usar transições suaves (fade-in/fade-out, pequenos deslocamentos) apenas onde agregarem clareza, nunca como enfeite excessivo.
+     - manter a experiência rápida e responsiva (sem animações longas ou bloqueantes).
+
 ---
 
 ## 6. Documentação e sincronização (architecture, README, roadmap)
@@ -262,7 +272,7 @@ Na resposta para o usuário, sempre citar explicitamente:
 
 - “Atualizado: architecture.md”
 - “Atualizado: README.md”
-- “Atualizado: ROADMAP-Extended.md (seção X)”
+- “Atualizado: ROADMAP.md (seção X)”
 
 quando isso ocorrer.
 
@@ -279,7 +289,7 @@ Se a tarefa:
 você **deve propor** um fatiamento, por exemplo:
 
 - Fase 1: ajustes internos / refactor preparatório.
-- Fase 2: mudança de comportamento / API / UI.
+-,Fase 2: mudança de comportamento / API / UI.
 - Fase 3: limpeza, testes, docs e arquitetura.
 
 Explique o que será entregue em cada fase.  
@@ -304,8 +314,8 @@ Se o usuário só aprovar a Fase 1, implemente somente ela.
    - Evitar floreio desnecessário.
 
 3. Código:
-   - sempre em blocos ` ```ts `, ` ```js `, ` ```py ` etc.
-   - indicar path do arquivo antes do bloco de código quando alterar múltiplos arquivos.
+   - Sempre em blocos ```ts```, ```js```, ```py``` etc.
+   - Indicar path do arquivo antes do bloco de código quando alterar múltiplos arquivos.
 
 ---
 
@@ -323,4 +333,5 @@ Quando estiver em dúvida, siga isso:
    - e o pedido do usuário permitir (ex.: Modo C).
 7. Sempre que mexer em arquitetura/comportamento, sincronize docs e diga o que foi atualizado.
 
-Se você respeitar este arquivo + `architecture.md`, o projeto continua coerente, e as LLMs futuras não te xingam quando abrirem esses arquivos.
+Se você respeitar este arquivo + `architecture.md`, o projeto continua coerente – tanto em código quanto em estética – e as LLMs futuras não te xingam quando abrirem esses arquivos.
+

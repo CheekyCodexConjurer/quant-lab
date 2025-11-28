@@ -16,7 +16,10 @@ const mockStep = (message) => ({
   message,
 });
 
-const CHUNK_TIMEOUT_MS = 60 * 1000;
+// Timeout para cada chamada de chunk em getHistoricalRates.
+// Para ativos como CL1! em M1, 60s era insuficiente; ampliamos para 5 minutos
+// para evitar falhas prematuras em redes mais lentas ou respostas mais pesadas.
+const CHUNK_TIMEOUT_MS = 5 * 60 * 1000;
 const CHUNK_RETRIES = 2;
 
 const pickEarliest = (asset, timeframe) => {
@@ -211,8 +214,10 @@ const withTimeout = (promise, ms, label = 'operation') =>
 
 const readExistingRanges = (asset) => {
   const ranges = {};
-  // Read tick metadata from separate file
-  const tickMetaPath = path.join(RAW_DIR, `${asset.toLowerCase()}-ticks-meta.json`);
+  const lower = asset.toLowerCase();
+
+  // Tick metadata em arquivo separado (JSONL + meta)
+  const tickMetaPath = path.join(RAW_DIR, `${lower}-ticks-meta.json`);
   const tickMeta = readJsonIfExists(tickMetaPath);
   if (tickMeta?.range) {
     ranges.tick = { ...tickMeta.range, count: tickMeta.count || 0 };
@@ -220,10 +225,27 @@ const readExistingRanges = (asset) => {
 
   const frames = ['m1', 'm5', 'm15', 'm30', 'h1', 'h4', 'd1', 'mn1'];
   frames.forEach((frame) => {
-    const file = path.join(DATA_DIR, `${asset.toLowerCase()}-${frame}.json`);
-    const json = readJsonIfExists(file);
+    const base = `${lower}-${frame}`;
+    const metaPath = path.join(DATA_DIR, `${base}-meta.json`);
+    const meta = readJsonIfExists(metaPath);
+    if (meta?.range) {
+      ranges[frame] = {
+        start: meta.range.start,
+        end: meta.range.end,
+        count: meta.totalCount || 0,
+      };
+      return;
+    }
+
+    // Fallback para formato legado { asset, timeframe, range, candles }
+    const legacyFile = path.join(DATA_DIR, `${base}.json`);
+    const json = readJsonIfExists(legacyFile);
     if (json?.range) {
-      ranges[frame] = { ...json.range, count: json.candles?.length || 0 };
+      ranges[frame] = {
+        start: json.range.start,
+        end: json.range.end,
+        count: Array.isArray(json.candles) ? json.candles.length : 0,
+      };
     }
   });
 
@@ -299,19 +321,63 @@ const loadExistingData = (asset, timeframe) => {
   const isTick = timeframe?.toLowerCase() === 'tick';
 
   if (isTick) {
-    // For ticks, we don't load the whole file into memory anymore.
-    // We just return empty data and the range from metadata.
+    // Para ticks, usamos apenas o range da meta JSONL.
     const metaPath = path.join(RAW_DIR, `${asset.toLowerCase()}-ticks-meta.json`);
     const meta = readJsonIfExists(metaPath);
     return { data: [], range: meta?.range || {} };
   }
 
-  const filepath = path.join(DATA_DIR, `${asset.toLowerCase()}-${timeframe.toLowerCase()}.json`);
-  const json = readJsonIfExists(filepath);
-  if (!json) return { data: [], range: {} };
+  const lowerAsset = asset.toLowerCase();
+  const lowerTf = timeframe.toLowerCase();
+  const base = `${lowerAsset}-${lowerTf}`;
+
+  const metaPath = path.join(DATA_DIR, `${base}-meta.json`);
+  const meta = readJsonIfExists(metaPath);
+
+  // Se tivermos metadados e segmentos, montamos o array a partir dos segmentos.
+  if (meta && Array.isArray(meta.segments) && meta.segments.length) {
+    const all = [];
+    let start = null;
+    let end = null;
+
+    const sortedSegments = [...meta.segments].sort((a, b) => {
+      const ta = new Date(a.start || 0).getTime();
+      const tb = new Date(b.start || 0).getTime();
+      return ta - tb;
+    });
+
+    sortedSegments.forEach((segment) => {
+      const filename = segment.file || `${base}-${segment.segment}.json`;
+      const filepath = path.join(DATA_DIR, filename);
+      const json = readJsonIfExists(filepath);
+      if (!json || !Array.isArray(json.candles)) return;
+
+      json.candles.forEach((candle) => {
+        all.push(candle);
+        if (candle.time) {
+          const d = new Date(candle.time);
+          if (!Number.isNaN(d.getTime())) {
+            const iso = d.toISOString();
+            if (!start || iso < start) start = iso;
+            if (!end || iso > end) end = iso;
+          }
+        }
+      });
+    });
+
+    return {
+      data: all,
+      range: start && end ? { start, end } : meta.range || {},
+    };
+  }
+
+  // Fallback para formato legado { asset, timeframe, range, candles }
+  const legacyPath = path.join(DATA_DIR, `${base}.json`);
+  const legacyJson = readJsonIfExists(legacyPath);
+  if (!legacyJson) return { data: [], range: {} };
   return {
-    data: json.candles || [],
-    range: json.range || {},
+    data: legacyJson.candles || [],
+    range: legacyJson.range || {},
   };
 };
 
@@ -398,12 +464,9 @@ const executeJob = async (job) => {
       });
 
       const chunks = buildChunks(range, frame);
-      const existingData = mode === 'continue' ? loadExistingData(job.asset, frame) : { data: [], range: {} };
       const isTickFrame = false;
-      const field = 'time';
-      let mergedData = Array.isArray(existingData.data) ? [...existingData.data] : [];
-      const baseFromIso = (mode === 'continue' && existingData?.range?.start) || range.fromIso;
-      let totalCount = mergedData.length;
+      const existingCount = existingRange?.count || 0;
+      let totalCount = existingCount;
       setFrameState(job.id, {
         frameStage: 'downloading',
         frameProgress: 0.25,
@@ -413,58 +476,57 @@ const executeJob = async (job) => {
       for (let cIdx = 0; cIdx < chunks.length; cIdx += 1) {
         const chunk = chunks[cIdx];
         const chunkLabel = `${chunk.from.toISOString()} -> ${chunk.to.toISOString()}`;
-      const chunkRange = { fromIso: chunk.from.toISOString(), toIso: chunk.to.toISOString() };
-      try {
-        let data = [];
-        let attempt = 0;
-        while (attempt <= CHUNK_RETRIES) {
-          if (jobs.get(job.id)?.status === 'canceled') {
-            pushJobLog(job.id, 'Chunk canceled before completion.');
-            return;
-          }
-          try {
-            data = await withTimeout(
-              getHistoricalRates({
-                instrument: source.instrument,
-                dates: { from: chunk.from, to: chunk.to },
-                timeframe: frame,
-                format: 'json',
-              }),
-              CHUNK_TIMEOUT_MS,
-              `chunk ${cIdx + 1}/${chunks.length} (${frame})`
-            );
-            break;
-          } catch (err) {
-            attempt += 1;
-            if (attempt > CHUNK_RETRIES) {
-              throw err;
+        const chunkRange = { fromIso: chunk.from.toISOString(), toIso: chunk.to.toISOString() };
+        try {
+          let data = [];
+          let attempt = 0;
+          while (attempt <= CHUNK_RETRIES) {
+            if (jobs.get(job.id)?.status === 'canceled') {
+              pushJobLog(job.id, 'Chunk canceled before completion.');
+              return;
             }
+            try {
+              data = await withTimeout(
+                getHistoricalRates({
+                  instrument: source.instrument,
+                  dates: { from: chunk.from, to: chunk.to },
+                  timeframe: frame,
+                  format: 'json',
+                }),
+                CHUNK_TIMEOUT_MS,
+                `chunk ${cIdx + 1}/${chunks.length} (${frame})`
+              );
+              break;
+            } catch (err) {
+              attempt += 1;
+              if (attempt > CHUNK_RETRIES) {
+                throw err;
+              }
+              pushJobLog(
+                job.id,
+                `Retrying chunk ${cIdx + 1}/${chunks.length} (${frame}) after error: ${err.message || err}`
+              );
+            }
+          }
+          if (Array.isArray(data) && data.length > 0) {
+            const normalized = data.map((row) => {
+              if (isTickFrame) return row;
+              const timeValue = row.time || row.timestamp || row.date;
+              const timeIso =
+                typeof timeValue === 'number'
+                  ? new Date(timeValue).toISOString()
+                  : typeof timeValue === 'string'
+                    ? new Date(timeValue).toISOString()
+                    : null;
+              return timeIso ? { ...row, time: timeIso } : row;
+            });
+            writeCandlesToDisk(job.asset, frame, normalized, chunkRange);
+            totalCount += normalized.length;
+            pushJobLog(job.id, `Chunk ${cIdx + 1}/${chunks.length} (${frame}) ok: ${data.length} rows (${chunkLabel})`);
             pushJobLog(
               job.id,
-              `Retrying chunk ${cIdx + 1}/${chunks.length} (${frame}) after error: ${err.message || err}`
+              `Persisted chunk ${cIdx + 1}/${chunks.length} (${frame}) to disk (approx count=${totalCount})`
             );
-          }
-        }
-        if (Array.isArray(data) && data.length > 0) {
-          const normalized = data.map((row) => {
-            if (isTickFrame) return row;
-            const timeValue = row.time || row.timestamp || row.date;
-            const timeIso =
-              typeof timeValue === 'number'
-                ? new Date(timeValue).toISOString()
-                : typeof timeValue === 'string'
-                  ? new Date(timeValue).toISOString()
-                  : null;
-            return timeIso ? { ...row, time: timeIso } : row;
-          });
-          mergedData = mergeByTime(mergedData, normalized, field);
-          writeCandlesToDisk(job.asset, frame, mergedData, { fromIso: baseFromIso, toIso: chunkRange.toIso });
-          totalCount = mergedData.length;
-          pushJobLog(job.id, `Chunk ${cIdx + 1}/${chunks.length} (${frame}) ok: ${data.length} rows (${chunkLabel})`);
-          pushJobLog(
-            job.id,
-            `Persisted chunk ${cIdx + 1}/${chunks.length} (${frame}) to disk (count=${totalCount})`
-          );
           } else {
             pushJobLog(job.id, `Chunk ${cIdx + 1}/${chunks.length} (${frame}) returned no data (${chunkLabel})`);
           }
@@ -484,7 +546,7 @@ const executeJob = async (job) => {
         frameStage: 'downloaded',
       });
 
-      const effectiveCount = isTickFrame ? totalCount : mergedData.length;
+      const effectiveCount = totalCount;
       if (!effectiveCount) {
         pushJobLog(job.id, `No data returned for ${frame} (${range.fromIso} -> ${range.toIso})`);
         setFrameState(job.id, {

@@ -31,6 +31,13 @@ export interface BacktestResult {
   rawStatistics?: Record<string, string | number>;
 }
 
+export type LicenseMode = 'internal' | 'early-access' | 'expired';
+
+export interface LicenseState {
+  mode: LicenseMode;
+  key?: string;
+}
+
 export interface CustomIndicator {
   id: string;
   name: string;

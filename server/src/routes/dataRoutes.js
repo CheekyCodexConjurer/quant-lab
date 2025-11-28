@@ -24,7 +24,25 @@ router.get('/:asset/:timeframe', (req, res) => {
   if (!data) {
     return res.status(404).json({ error: 'dataset not found' });
   }
-  res.json(data);
+
+  const payload = { ...data };
+  const candles = Array.isArray(payload.candles) ? payload.candles : [];
+
+  // Limite de segurança para evitar respostas JSON gigantes.
+  const MAX_CANDLES_RESPONSE = 2_000_000;
+  if (candles.length > MAX_CANDLES_RESPONSE) {
+    const sliced = candles.slice(candles.length - MAX_CANDLES_RESPONSE);
+    const first = sliced[0];
+    if (first && first.time && payload.range && payload.range.end) {
+      payload.range = {
+        start: first.time,
+        end: payload.range.end,
+      };
+    }
+    payload.candles = sliced;
+  }
+
+  res.json(payload);
 });
 
 module.exports = router;

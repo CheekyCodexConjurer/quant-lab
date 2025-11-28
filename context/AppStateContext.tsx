@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { AVAILABLE_ASSETS, AVAILABLE_TIMEFRAMES } from '../constants/markets';
 import { TIMEZONE_OPTIONS } from '../constants/timezones';
-import { ChartAppearance, ViewState } from '../types';
+import { ChartAppearance, ViewState, LicenseState } from '../types';
 
 type AppState = {
   activeView: ViewState;
@@ -20,6 +20,8 @@ type AppState = {
   setDownloadedAssets: (assets: string[]) => void;
   chartAppearance: ChartAppearance;
   setChartAppearance: (appearance: Partial<ChartAppearance>) => void;
+  license: LicenseState;
+  setLicense: (next: LicenseState) => void;
 };
 
 const AppStateContext = createContext<AppState | undefined>(undefined);
@@ -29,6 +31,7 @@ const TZ_STORAGE_KEY = 'thelab.chartTimezone';
 const DATASETS_STORAGE_KEY = 'thelab.downloadedAssets';
 const APPEARANCE_STORAGE_KEY = 'thelab.chartAppearance';
 const DEFAULT_TIMEZONE_ID = 'America/Sao_Paulo';
+const LICENSE_STORAGE_KEY = 'thelab.licenseState';
 
 const loadPinnedTimeframes = () => {
   if (typeof window === 'undefined') return [...AVAILABLE_TIMEFRAMES];
@@ -114,6 +117,20 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   });
 
   const [chartAppearance, setChartAppearanceState] = useState<ChartAppearance>(loadAppearance);
+  const [license, setLicenseState] = useState<LicenseState>(() => {
+    if (typeof window === 'undefined') return { mode: 'internal' };
+    try {
+      const stored = window.localStorage.getItem(LICENSE_STORAGE_KEY);
+      if (!stored) return { mode: 'internal' };
+      const parsed = JSON.parse(stored);
+      if (parsed && typeof parsed.mode === 'string') {
+        return { mode: parsed.mode, key: typeof parsed.key === 'string' ? parsed.key : undefined };
+      }
+    } catch {
+      /* ignore */
+    }
+    return { mode: 'internal' };
+  });
 
   useEffect(() => {
     try {
@@ -146,6 +163,14 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
       /* ignore */
     }
   }, [chartAppearance]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LICENSE_STORAGE_KEY, JSON.stringify(license));
+    } catch {
+      /* ignore */
+    }
+  }, [license]);
 
   const setAvailableTimeframes = (asset: string, frames: string[]) => {
     const normalizedAsset = String(asset || '').toUpperCase();
@@ -187,6 +212,13 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     }));
   };
 
+  const setLicense = (next: LicenseState) => {
+    setLicenseState({
+      mode: next?.mode || 'internal',
+      key: next?.key || undefined,
+    });
+  };
+
   return (
     <AppStateContext.Provider
       value={{
@@ -206,6 +238,8 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
         setDownloadedAssets,
         chartAppearance,
         setChartAppearance,
+        license,
+        setLicense,
       }}
     >
       {children}
