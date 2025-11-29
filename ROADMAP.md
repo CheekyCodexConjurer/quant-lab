@@ -539,6 +539,88 @@ Deixar o fluxo de uso natural para o usuario: ler a API, escrever o script, salv
 
 ---
 
+#### 1.4.6. Strategy Lab - Logs e feedback de erros (indicadores + estrategias)
+
+> Esta secao detalha a “area de log” do Strategy Lab para indicadores Python e estrategias Lean.  
+> A implementacao sera feita em fases, priorizando primeiro o modelo de erro no backend.
+
+**Objetivo geral**
+
+- Dar ao usuario uma experiencia semelhante ao PineScript / debugger de Python:
+  - quando um indicador ou estrategia tiver erro de sintaxe ou execucao, mostrar **onde** (arquivo/linha) e **qual** o erro;
+  - consolidar esses eventos em uma area de logs do Strategy Lab, em vez de mensagens soltas.
+
+**Modelo de erro (backend) – Fase 1**
+
+- Indicadores (`server/indicator_runner/runner.py` + `server/src/services/indicatorExecutionService.js`):
+  - O runner Python passa a incluir, em erros de import/execucao:
+    - `error.type`: `ImportError`, `ExecutionError`, `MissingEntryPoint`, etc.
+    - `error.message`: mensagem curta.
+    - `error.phase`: `bootstrap` | `inputs` | `import` | `execute` | `serialize`.
+    - `error.exceptionType`: nome da excecao Python (`SyntaxError`, `NameError`, etc.).
+    - `error.file`: caminho absoluto do script (em geral `indicators/<name>.py`).
+    - `error.line` e `error.column` (quando disponiveis, ex.: `SyntaxError`).
+    - `error.traceback`: trecho de stacktrace (truncado) para debug mais profundo.
+  - O `indicatorExecutionService` preserva integralmente esse objeto `error` no payload retornado ao frontend, alem de registrar o erro em `logger` com `module: 'indicatorExecution'` (visivel em `/api/debug/logs`).
+
+- Estrategias Lean (`server/src/services/leanService.js` + `server/src/routes/leanRoutes.js`):
+  - Durante a execucao do CLI Lean, o `leanService` analisa `stderr` e tenta extrair:
+    - `file` e `line` para erros de Python relacionados a `Algorithm.py` (estrategia gerada a partir do Strategy Lab).
+    - `type` (`SyntaxError`, etc.) e `message` (parte final da linha de erro).
+  - Essas informacoes sao armazenadas em `job.errorMeta` e expostas via:
+    - `POST /api/lean/run` (snapshot inicial do job).
+    - `GET /api/lean/jobs/:id` (snapshot atualizado, incluindo `errorMeta` se existir).
+
+**API cliente e hooks (frontend) – Fase 2**
+
+- Tipos em `types.ts`:
+  - Introduzir `StrategyLabError` com campos:
+    - `source: 'indicator' | 'strategy' | 'lean' | 'system'`;
+    - `type`, `message`, `file?`, `line?`, `column?`, `phase?`, `traceback?`, `createdAt`.
+
+- `services/api/client.ts`:
+  - Em `runIndicator`, quando `res.ok === false`, ler `body.error` e anexar aos erros JS via `err.details = body.error` (sem quebrar chamadas atuais).
+  - Em `runLeanBacktest` / `getLeanJob`, propagar `errorMeta` retornado pelo backend.
+
+- `hooks/useIndicators.ts`:
+  - Manter `indicatorErrors: Record<string, string | null>` como resumo textual.
+  - Adicionar `indicatorErrorDetails: Record<string, StrategyLabError | null>` com o objeto estruturado (incluindo `file/line/phase`), populado a partir de `err.details`.
+
+- `hooks/useLeanBacktest.ts`:
+  - Adicionar `errorMeta?: StrategyLabError | null` ao estado retornado pelo hook, preenchido a partir de `job.errorMeta`.
+
+**Area de log do Strategy Lab (StrategyView) – Fase 3**
+
+- Componente dedicado `components/strategy/StrategyLogPanel.tsx`:
+  - Props principais: `events: StrategyLabError[] | StrategyLabLogEvent[]`, `onJumpToLocation(file, line)`.
+  - UI minimalista:
+    - header “Strategy Lab Logs”;
+    - filtro por `source` (`All | Indicators | Strategy | Lean`);
+    - linhas com timestamp, badge de origem e mensagem, mostrando `file:line` quando disponivel.
+
+- `views/StrategyView.tsx`:
+  - Substituir o uso de `indicatorLogs: string[]` por um estado de eventos estruturados de log (max ~200–300 entradas).
+  - Alimentar o painel com:
+    - erros de indicador vindos de `indicatorErrorDetails` (source `indicator`);
+    - erros de estrategia Lean (`leanBacktest.errorMeta`, source `strategy/lean`);
+    - eventos de UX (save/import/delete) marcados como `level: 'info'`.
+  - Implementar `handleJumpToLocation(file, line)` para sincronizar log → editor.
+
+**Integracao com o editor Python – Fase 4**
+
+- `components/editor/PythonEditor.tsx`:
+  - Adicionar props opcionais:
+    - `errorLines?: number[]`;
+    - `onRequestScrollToLine?: (line: number) => void`.
+  - Renderizar overlay leve destacando linhas com erro (fundo sutil + borda lateral), sem quebrar o visual atual.
+
+- `views/StrategyView.tsx`:
+  - Ao clicar em uma linha do log:
+    - Selecionar o indicador/estrategia correspondente (com base em `file` / `id`).
+    - Ajustar `errorLines` e, opcionalmente, scrollar a linha relevante.
+  - Exibir banners compactos acima do editor quando houver erro atual:
+    - “Indicator error (line X): ...” ou “Strategy error (line X): ...” com botao “Go to line”.
+
 ## Fase 2 - Paid Beta - Contas Online, Breakdown & Experiments
 
 > **Status geral:** ainda nao iniciado.  

@@ -33,6 +33,20 @@ export interface IndicatorOverlay {
   levels: IndicatorLevel[];
 }
 
+export type StrategyLabErrorSource = 'indicator' | 'strategy' | 'lean' | 'system';
+
+export interface StrategyLabError {
+  source: StrategyLabErrorSource;
+  type: string;
+  message: string;
+  file?: string;
+  line?: number;
+  column?: number;
+  phase?: string;
+  traceback?: string;
+  createdAt: number;
+}
+
 export interface Trade {
   id: string;
   entryTime: string | number;

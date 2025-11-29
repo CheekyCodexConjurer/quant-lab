@@ -84,6 +84,64 @@ def _load_indicator_module(script_path: str):
   return module
 
 
+def _extract_location(exc: BaseException, script_path: str) -> Dict[str, Any]:
+  """
+  Try to extract file/line/column information for an exception related to the
+  indicator script. This is best-effort and should never raise.
+  """
+  info: Dict[str, Any] = {}
+  try:
+    script_abs = os.path.abspath(script_path)
+  except Exception:  # pragma: no cover - extremely defensive
+    script_abs = script_path
+
+  # SyntaxError / IndentationError: they carry precise location metadata.
+  if isinstance(exc, SyntaxError):
+    filename = getattr(exc, "filename", None) or script_abs
+    try:
+      info["file"] = os.path.abspath(str(filename))
+    except Exception:  # pragma: no cover
+      info["file"] = str(filename)
+    lineno = getattr(exc, "lineno", None)
+    offset = getattr(exc, "offset", None)
+    if isinstance(lineno, int) and lineno > 0:
+      info["line"] = lineno
+    if isinstance(offset, int) and offset > 0:
+      info["column"] = offset
+    return info
+
+  tb = getattr(exc, "__traceback__", None)
+  if tb is None:
+    return info
+
+  try:
+    frames = traceback.extract_tb(tb)
+  except Exception:  # pragma: no cover
+    return info
+
+  candidate = None
+  for frame in frames:
+    try:
+      frame_file = os.path.abspath(frame.filename)
+    except Exception:  # pragma: no cover
+      frame_file = frame.filename
+    if frame_file == script_abs:
+      candidate = frame
+
+  if candidate is None and frames:
+    candidate = frames[-1]
+
+  if candidate is not None:
+    try:
+      info["file"] = os.path.abspath(candidate.filename)
+    except Exception:  # pragma: no cover
+      info["file"] = candidate.filename
+    if isinstance(candidate.lineno, int) and candidate.lineno > 0:
+      info["line"] = candidate.lineno
+
+  return info
+
+
 def main() -> None:
   start_ts = time.time()
   api_version = 1
@@ -161,16 +219,20 @@ def main() -> None:
   try:
     module = _load_indicator_module(script_path)
   except Exception as exc:
+    location = _extract_location(exc, script_path)
+    error_payload: Dict[str, Any] = {
+      "type": "ImportError",
+      "message": f"Failed to import indicator: {exc}",
+      "phase": "import",
+      "traceback": traceback.format_exc(limit=5),
+      "exceptionType": exc.__class__.__name__,
+    }
+    error_payload.update(location)
     _print_json(
       {
         "ok": False,
         "apiVersion": api_version,
-        "error": {
-          "type": "ImportError",
-          "message": f"Failed to import indicator: {exc}",
-          "phase": "import",
-          "traceback": traceback.format_exc(limit=5),
-        },
+        "error": error_payload,
       }
     )
     return
@@ -196,16 +258,20 @@ def main() -> None:
     result = calculate(inputs)
     exec_ms = (time.time() - exec_start) * 1000.0
   except Exception as exc:
+    location = _extract_location(exc, script_path)
+    error_payload: Dict[str, Any] = {
+      "type": "ExecutionError",
+      "message": str(exc),
+      "phase": "execute",
+      "traceback": traceback.format_exc(limit=10),
+      "exceptionType": exc.__class__.__name__,
+    }
+    error_payload.update(location)
     _print_json(
       {
         "ok": False,
         "apiVersion": api_version,
-        "error": {
-          "type": "ExecutionError",
-          "message": str(exc),
-          "phase": "execute",
-          "traceback": traceback.format_exc(limit=10),
-        },
+        "error": error_payload,
       }
     )
     return

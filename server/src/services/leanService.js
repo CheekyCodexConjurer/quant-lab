@@ -187,6 +187,34 @@ function parseLeanResults(jobDir) {
   };
 }
 
+function updateErrorMetaFromStderr(job, algorithmPath, rawLine) {
+  if (!rawLine) return;
+  const line = String(rawLine);
+  const algoName = path.basename(algorithmPath || 'Algorithm.py');
+
+  const nextMeta = { ...(job.errorMeta || {}), phase: 'lean-cli' };
+
+  const fileRegex = new RegExp(`File\\s+"(.+${algoName})",\\s+line\\s+(\\d+)`);
+  const fileMatch = fileRegex.exec(line);
+  if (fileMatch) {
+    nextMeta.file = fileMatch[1];
+    const parsedLine = Number(fileMatch[2]);
+    if (Number.isFinite(parsedLine) && parsedLine > 0) {
+      nextMeta.line = parsedLine;
+    }
+    job.errorMeta = nextMeta;
+    return;
+  }
+
+  const errorRegex = /(SyntaxError|NameError|TypeError|ValueError|RuntimeError):\s*(.+)$/;
+  const errorMatch = errorRegex.exec(line);
+  if (errorMatch) {
+    nextMeta.type = errorMatch[1];
+    nextMeta.message = errorMatch[2];
+    job.errorMeta = nextMeta;
+  }
+}
+
 function summarizeJob(job) {
   if (!job) return null;
   return {
@@ -199,6 +227,7 @@ function summarizeJob(job) {
     resultPath: job.resultPath,
     exitCode: job.exitCode,
     error: job.error,
+    errorMeta: job.errorMeta || null,
   };
 }
 
@@ -251,15 +280,26 @@ function startLeanBacktest(options) {
   jobs.set(jobId, job);
 
   child.stdout.on('data', (data) => {
-    const line = data.toString();
-    job.logs.push(line.trim());
-    job.updatedAt = Date.now();
+    const raw = data.toString();
+    const lines = String(raw).split(/\r?\n/);
+    lines.forEach((text) => {
+      const line = text.trim();
+      if (!line) return;
+      job.logs.push(line);
+      job.updatedAt = Date.now();
+    });
   });
 
   child.stderr.on('data', (data) => {
-    const line = data.toString();
-    job.logs.push(`[stderr] ${line.trim()}`);
-    job.updatedAt = Date.now();
+    const raw = data.toString();
+    const lines = String(raw).split(/\r?\n/);
+    lines.forEach((text) => {
+      const line = text.trim();
+      if (!line) return;
+      job.logs.push(`[stderr] ${line}`);
+      job.updatedAt = Date.now();
+      updateErrorMetaFromStderr(job, algorithmPath, line);
+    });
   });
 
   child.on('error', (error) => {

@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Settings, Code, RefreshCcw, Save, Play, CheckCircle2, FileText, Upload, Plus, Copy, MoreVertical, Trash } from 'lucide-react';
-import { CustomIndicator, StrategyFile } from '../types';
+import { CustomIndicator, StrategyFile, StrategyLabError } from '../types';
 import { useToast } from '../components/common/Toast';
 import { MainContent } from '../components/layout/MainContent';
 import { FileTree, FileTreeNode } from '../components/files/FileTree';
 import { PythonEditor } from '../components/editor/PythonEditor';
 import { LeanLogPanel } from '../components/lean/LeanLogPanel';
+import { StrategyLogPanel } from '../components/strategy/StrategyLogPanel';
 import { LeanSettingsPanel } from '../components/lean/LeanSettingsPanel';
 import { ensureRootedPath, normalizeSlashes, toRelativePath, truncateMiddle } from '../utils/path';
 import { useHoverMenu } from '../components/ui/useHoverMenu';
@@ -32,6 +33,7 @@ type StrategyViewProps = {
   leanLogs: string[];
   leanJobId: string | null;
   leanError?: string | null;
+  leanErrorMeta?: StrategyLabError | null;
   leanParams: { cash: number; feeBps: number; slippageBps: number };
   onLeanParamsChange: (next: { cash: number; feeBps: number; slippageBps: number }) => void;
   indicators: CustomIndicator[];
@@ -50,6 +52,7 @@ type StrategyViewProps = {
   indicatorFolders: string[];
   addIndicatorFolder: (folder: string) => void;
   removeIndicatorFolder: (folder: string) => void;
+  indicatorErrorDetails: Record<string, StrategyLabError | null>;
 };
 
 const STRATEGY_ROOT = 'strategies';
@@ -133,7 +136,12 @@ const buildTree = (strategies: StrategyFile[], extraFolders: string[], order: st
   return { ...root, children: sortNodes(root.children) };
 };
 
-const buildIndicatorTree = (indicators: CustomIndicator[], order: string[], folders: string[]): FileTreeNode => {
+const buildIndicatorTree = (
+  indicators: CustomIndicator[],
+  order: string[],
+  folders: string[],
+  workspaceItems: { path: string; type: 'file' | 'folder'; isMain?: boolean }[]
+): FileTreeNode => {
   const root: FileTreeNode = { id: INDICATOR_ROOT, name: INDICATOR_ROOT, path: INDICATOR_ROOT, type: 'folder', children: [] };
   const byFolder: Record<string, FileTreeNode> = { [INDICATOR_ROOT]: root };
 
@@ -162,6 +170,41 @@ const buildIndicatorTree = (indicators: CustomIndicator[], order: string[], fold
     }
   });
   (folders || []).forEach((folderPath) => registerFolder(folderPath));
+
+  // Workspace items (arquivos de suporte, pastas internas etc.)
+  (workspaceItems || []).forEach((item) => {
+    const rawPath = item.path || '';
+    if (!rawPath.toLowerCase().startsWith('indicators/')) return;
+    const rel = toRelativePath(INDICATOR_ROOT, rawPath);
+    const parts = rel ? rel.split('/').filter(Boolean) : [];
+    if (!parts.length) return;
+    const folderParts = item.type === 'folder' ? parts : parts.slice(0, -1);
+    let current = root;
+    folderParts.forEach((segment, index) => {
+      const currentPath = `${INDICATOR_ROOT}/${folderParts.slice(0, index + 1).join('/')}`;
+      if (!byFolder[currentPath]) {
+        const node: FileTreeNode = { id: currentPath, name: segment, path: currentPath, type: 'folder', children: [] };
+        byFolder[currentPath] = node;
+        current.children?.push(node);
+      }
+      current = byFolder[currentPath];
+    });
+
+    if (item.type === 'file' && !item.isMain) {
+      const filePath = rawPath;
+      const fileName = parts[parts.length - 1];
+      const existing = current.children?.some((child) => normalizeSlashes(child.path) === normalizeSlashes(filePath));
+      if (!existing) {
+        current.children = current.children || [];
+        current.children.push({
+          id: filePath,
+          name: fileName,
+          path: filePath,
+          type: 'file',
+        });
+      }
+    }
+  });
 
   indicators.forEach((indicator) => {
     const fullPath = deriveIndicatorPath(indicator);
@@ -234,6 +277,7 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
   leanLogs,
   leanJobId,
   leanError,
+  leanErrorMeta,
   leanParams,
   onLeanParamsChange,
   indicators,
@@ -252,12 +296,14 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
   indicatorFolders,
   addIndicatorFolder,
   removeIndicatorFolder,
+  indicatorErrorDetails,
 }) => {
   const addToast = useToast();
   const [codeDraft, setCodeDraft] = useState(activeStrategy?.code ?? '');
   const [isSaving, setIsSaving] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ [STRATEGY_ROOT]: true, [INDICATOR_ROOT]: true });
   const [extraFolders, setExtraFolders] = useState<string[]>([]);
+  const [indicatorWorkspaceItems, setIndicatorWorkspaceItems] = useState<{ path: string; type: 'file' | 'folder'; isMain?: boolean }[]>([]);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [actionMenuPath, setActionMenuPath] = useState<string | null>(null);
   const actionMenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -270,6 +316,8 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
   const createMenu = useHoverMenu({ closeDelay: 150 });
   const settingsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [renderCreateMenu, setRenderCreateMenu] = useState(false);
+  const [strategyLogEvents, setStrategyLogEvents] = useState<StrategyLabError[]>([]);
+  const [editorErrorLines, setEditorErrorLines] = useState<number[]>([]);
   const clearActionTimer = () => {
     if (actionMenuCloseTimer.current) {
       clearTimeout(actionMenuCloseTimer.current);
@@ -286,6 +334,34 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
       settingsSaveTimer.current = null;
     }
   };
+
+  useEffect(() => {
+    if (!activeIndicator) return;
+    const detail = indicatorErrorDetails[activeIndicator.id];
+    if (!detail) return;
+    appendStrategyLogEvent(detail);
+    if (typeof detail.line === 'number') {
+      setEditorErrorLines([detail.line]);
+    }
+  }, [activeIndicator, indicatorErrorDetails]);
+
+  useEffect(() => {
+    if (!leanErrorMeta) return;
+    appendStrategyLogEvent(leanErrorMeta);
+    if (typeof leanErrorMeta.line === 'number') {
+      setEditorErrorLines([leanErrorMeta.line]);
+    }
+  }, [leanErrorMeta]);
+
+  const appendStrategyLogEvent = (event: StrategyLabError) => {
+    setStrategyLogEvents((prev) => {
+      const next = [...prev, event];
+      if (next.length > 300) {
+        return next.slice(next.length - 300);
+      }
+      return next;
+    });
+  };
   const flushSettingsSave = useCallback(async () => {
     clearSettingsSaveTimer();
     const hasChanged =
@@ -300,12 +376,35 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
       addToast('Failed to save Lean settings', 'error');
     }
   }, [settingsDraft, leanParams.cash, leanParams.feeBps, leanParams.slippageBps, onLeanParamsChange, addToast]);
-  const scheduleSettingsSave = useCallback(() => {
+    const scheduleSettingsSave = useCallback(() => {
     clearSettingsSaveTimer();
     settingsSaveTimer.current = setTimeout(() => {
       void flushSettingsSave();
     }, 400);
   }, [flushSettingsSave]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadIndicatorWorkspace = async () => {
+      try {
+        const response = await apiClient.listIndicatorWorkspace();
+        const items = Array.isArray((response as any)?.items)
+          ? (response as any).items
+          : Array.isArray(response)
+            ? (response as any)
+            : [];
+        if (!cancelled) {
+          setIndicatorWorkspaceItems(items as { path: string; type: 'file' | 'folder'; isMain?: boolean }[]);
+        }
+      } catch (error) {
+        console.warn('[indicator] failed to load workspace tree', error);
+      }
+    };
+    loadIndicatorWorkspace();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [folderMenuPath, setFolderMenuPath] = useState<string | null>(null);
 
   const orderedPaths = useMemo(() => {
@@ -322,8 +421,8 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
 
   const strategyTree = useMemo(() => buildTree(strategies, extraFolders, strategyOrder), [strategies, extraFolders, strategyOrder]);
   const indicatorTree = useMemo(
-    () => buildIndicatorTree(indicators, indicatorOrder, indicatorFolders),
-    [indicators, indicatorOrder, indicatorFolders]
+    () => buildIndicatorTree(indicators, indicatorOrder, indicatorFolders, indicatorWorkspaceItems),
+    [indicators, indicatorOrder, indicatorFolders, indicatorWorkspaceItems]
   );
   const workspaceNodes = useMemo(() => buildWorkspaceFolders(workspaceFolders), [workspaceFolders]);
   const tree: FileTreeNode = useMemo(
@@ -1125,6 +1224,7 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
                       value={codeDraft}
                       onChange={setCodeDraft}
                       placeholder="Edit your Python indicator..."
+                      errorLines={editorErrorLines}
                     />
                   ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
@@ -1138,6 +1238,7 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
                     value={codeDraft}
                     onChange={setCodeDraft}
                     placeholder="Write your Python strategy..."
+                    errorLines={editorErrorLines}
                   />
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
@@ -1150,7 +1251,22 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
           </div>
 
           <div className="h-px bg-slate-200" />
-          <LeanLogPanel status={leanStatus} jobId={leanJobId} logs={[...indicatorLogs, ...leanLogs]} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <StrategyLogPanel
+              events={strategyLogEvents}
+              onJumpToLocation={(event) => {
+                if (event.source === 'indicator') {
+                  setActiveKind('indicator');
+                } else if (event.source === 'strategy' || event.source === 'lean') {
+                  setActiveKind('strategy');
+                }
+                if (typeof event.line === 'number') {
+                  setEditorErrorLines([event.line]);
+                }
+              }}
+            />
+            <LeanLogPanel status={leanStatus} jobId={leanJobId} logs={[...indicatorLogs, ...leanLogs]} />
+          </div>
         </div>
       </div>
     </MainContent>

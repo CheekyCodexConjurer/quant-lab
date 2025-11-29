@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiClient } from '../services/api/client';
-import { BacktestResult } from '../types';
+import { BacktestResult, StrategyLabError } from '../types';
 import { adaptLeanResult } from '../utils/leanResultAdapter';
 
 type LeanStatus = 'idle' | 'queued' | 'running' | 'completed' | 'error';
@@ -40,6 +40,7 @@ export const useLeanBacktest = (onResult?: (result: BacktestResult) => void) => 
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BacktestResult | null>(null);
+  const [errorMeta, setErrorMeta] = useState<StrategyLabError | null>(null);
   const [params, setParams] = useState(DEFAULT_PARAMS);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -57,6 +58,23 @@ export const useLeanBacktest = (onResult?: (result: BacktestResult) => void) => 
     setStatus(nextStatus);
     setLogs((job?.logs || []).map((line: any) => String(line)));
     setError(job?.error || null);
+    if (job?.errorMeta && typeof job.errorMeta === 'object') {
+      const meta = job.errorMeta as any;
+      const createdAt = typeof meta.createdAt === 'number' ? meta.createdAt : Date.now();
+      setErrorMeta({
+        source: 'strategy',
+        type: String(meta.type || 'LeanError'),
+        message: String(meta.message || job.error || 'Lean job error'),
+        file: meta.file ? String(meta.file) : undefined,
+        line: typeof meta.line === 'number' ? meta.line : undefined,
+        column: typeof meta.column === 'number' ? meta.column : undefined,
+        phase: meta.phase ? String(meta.phase) : undefined,
+        traceback: meta.traceback ? String(meta.traceback) : undefined,
+        createdAt,
+      });
+    } else {
+      setErrorMeta(null);
+    }
     return nextStatus;
   };
 
@@ -129,6 +147,7 @@ export const useLeanBacktest = (onResult?: (result: BacktestResult) => void) => 
     setError(null);
     setJobId(null);
     setResult(null);
+    setErrorMeta(null);
   };
 
   return {
@@ -136,6 +155,7 @@ export const useLeanBacktest = (onResult?: (result: BacktestResult) => void) => 
     logs,
     jobId,
     error,
+    errorMeta,
     result,
     params,
     runLeanBacktest,

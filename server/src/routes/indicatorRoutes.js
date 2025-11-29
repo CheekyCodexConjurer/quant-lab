@@ -7,6 +7,7 @@ const {
   encodeId,
   deleteIndicatorFile,
   renameIndicatorFile,
+  listIndicatorWorkspace,
 } = require('../services/indicatorFileService');
 const { setIndicatorActive } = require('../services/indicatorStateStore');
 
@@ -15,6 +16,12 @@ const router = express.Router();
 router.get('/', (_req, res) => {
   ensureSeed();
   const items = listIndicators();
+  res.json({ items });
+});
+
+router.get('/workspace/tree', (_req, res) => {
+  ensureSeed();
+  const items = listIndicatorWorkspace();
   res.json({ items });
 });
 

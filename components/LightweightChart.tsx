@@ -321,8 +321,8 @@ export const LightweightChart = forwardRef<LightweightChartHandle, ChartProps>(
           const ts = toTimestampSeconds(m.time);
           if (ts === null) return null;
           const kind = (m.kind || '').toLowerCase();
-          const isBullish = /buy|long|bull/.test(kind);
-          const isBearish = /sell|short|bear/.test(kind);
+          const isBullish = /buy|long|bull|protected-low/.test(kind);
+          const isBearish = /sell|short|bear|protected-high/.test(kind);
           const position = isBullish ? 'belowBar' : 'aboveBar';
           const shape = isBullish ? 'arrowUp' : isBearish ? 'arrowDown' : 'circle';
           const color = isBullish ? '#22c55e' : isBearish ? '#ef4444' : '#64748b';

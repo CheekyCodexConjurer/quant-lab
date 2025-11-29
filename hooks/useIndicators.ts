@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Candle, CustomIndicator, IndicatorOverlay } from '../types';
+import { Candle, CustomIndicator, IndicatorOverlay, StrategyLabError } from '../types';
 import { calculateEMA, NEW_INDICATOR_TEMPLATE, DEFAULT_INDICATOR_CODE } from '../utils/indicators';
 import { apiClient } from '../services/api/client';
 import {
@@ -64,6 +64,7 @@ export const useIndicators = (data: Candle[]) => {
   const [indicatorData, setIndicatorData] = useState<Record<string, IndicatorSeriesPoint[]>>({});
   const [indicatorOverlays, setIndicatorOverlays] = useState<Record<string, IndicatorOverlay>>({});
   const [indicatorErrors, setIndicatorErrors] = useState<Record<string, string | null>>({});
+  const [indicatorErrorDetails, setIndicatorErrorDetails] = useState<Record<string, StrategyLabError | null>>({});
   const [appliedVersions, setAppliedVersions] = useState<Record<string, number>>(loadAppliedVersions);
   const [nameOverrides, setNameOverrides] = useState<Record<string, string>>(loadIndicatorNames);
   const [indicatorOrder, setIndicatorOrder] = useState<string[]>(loadIndicatorOrder);
@@ -234,18 +235,27 @@ export const useIndicators = (data: Candle[]) => {
       const series: Record<string, IndicatorSeriesPoint[]> = {};
       const overlays: Record<string, IndicatorOverlay> = {};
       const errors: Record<string, string | null> = {};
+      const details: Record<string, StrategyLabError | null> = {};
 
       await Promise.all(
         activeIndicators.map(async (indicator) => {
           const versionKey = indicator.appliedVersion || indicator.updatedAt || indicator.lastModified || 0;
           const cacheKey = `${indicator.id}|${versionKey}|${baseKey}`;
-          const cached = cache[cacheKey];
-          if (cached) {
-            series[indicator.id] = cached.series;
-            overlays[indicator.id] = cached.overlay;
-            errors[indicator.id] = cached.error;
-            return;
-          }
+            const cached = cache[cacheKey];
+            if (cached) {
+              series[indicator.id] = cached.series;
+              overlays[indicator.id] = cached.overlay;
+              errors[indicator.id] = cached.error;
+              details[indicator.id] = cached.error
+                ? {
+                    source: 'indicator',
+                    type: 'CachedError',
+                    message: cached.error,
+                    createdAt: Date.now(),
+                  }
+                : null;
+              return;
+            }
 
           try {
             const response = await apiClient.runIndicator(indicator.id, windowCandles);
@@ -255,41 +265,58 @@ export const useIndicators = (data: Candle[]) => {
               markers: (response.overlay && response.overlay.markers) || [],
               levels: (response.overlay && response.overlay.levels) || [],
             };
-            const result: CachedIndicatorResult = {
-              series: line,
-              overlay,
-              error: null,
-            };
-            cache[cacheKey] = result;
-            series[indicator.id] = line;
-            overlays[indicator.id] = overlay;
-            errors[indicator.id] = null;
-          } catch (error) {
-            const message = (error as Error)?.message || 'Failed to run indicator';
-            console.warn('[useIndicators] runIndicator failed', indicator.id, error);
-            const fallbackOverlay: IndicatorOverlay = {
-              series: { main: [] },
-              markers: [],
-              levels: [],
-            };
-            const result: CachedIndicatorResult = {
-              series: [],
-              overlay: fallbackOverlay,
-              error: message,
-            };
-            cache[cacheKey] = result;
-            series[indicator.id] = [];
-            overlays[indicator.id] = fallbackOverlay;
-            errors[indicator.id] = message;
-          }
-        })
-      );
+              const result: CachedIndicatorResult = {
+                series: line,
+                overlay,
+                error: null,
+              };
+              cache[cacheKey] = result;
+              series[indicator.id] = line;
+              overlays[indicator.id] = overlay;
+              errors[indicator.id] = null;
+              details[indicator.id] = null;
+            } catch (error) {
+              const err = error as Error & { details?: any };
+              const message = err?.message || 'Failed to run indicator';
+              console.warn('[useIndicators] runIndicator failed', indicator.id, err);
+              const fallbackOverlay: IndicatorOverlay = {
+                series: { main: [] },
+                markers: [],
+                levels: [],
+              };
+              const result: CachedIndicatorResult = {
+                series: [],
+                overlay: fallbackOverlay,
+                error: message,
+              };
+              cache[cacheKey] = result;
+              series[indicator.id] = [];
+              overlays[indicator.id] = fallbackOverlay;
+              errors[indicator.id] = message;
+              const raw = err && err.details ? err.details : undefined;
+              const createdAt = Date.now();
+              const base: StrategyLabError = {
+                source: 'indicator',
+                type: (raw && raw.type) || 'IndicatorError',
+                message,
+                file: raw && raw.file ? String(raw.file) : undefined,
+                line: typeof raw?.line === 'number' ? raw.line : undefined,
+                column: typeof raw?.column === 'number' ? raw.column : undefined,
+                phase: raw && raw.phase ? String(raw.phase) : undefined,
+                traceback: raw && raw.traceback ? String(raw.traceback) : undefined,
+                createdAt,
+              };
+              details[indicator.id] = base;
+            }
+          })
+        );
 
-      if (!cancelled && runToken === runTokenRef.current) {
-        setIndicatorData(series);
-        setIndicatorOverlays(overlays);
-        setIndicatorErrors(errors);
-      }
+        if (!cancelled && runToken === runTokenRef.current) {
+          setIndicatorData(series);
+          setIndicatorOverlays(overlays);
+          setIndicatorErrors(errors);
+          setIndicatorErrorDetails(details);
+        }
     }, INDICATOR_DEBOUNCE_MS);
 
     debounceRef.current = timeoutHandle;
@@ -627,5 +654,6 @@ export const useIndicators = (data: Candle[]) => {
     renameIndicator,
     updateIndicatorName,
     indicatorErrors,
+    indicatorErrorDetails,
   };
 };

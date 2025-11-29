@@ -209,6 +209,30 @@ const ensureSeed = () => {
   fs.writeFileSync(seedPath, DEFAULT_INDICATOR_CODE, 'utf-8');
 };
 
+const listIndicatorWorkspace = () => {
+  ensureDir();
+  const items = [];
+
+  const walk = (dir) => {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries.forEach((entry) => {
+      const fullPath = path.join(dir, entry.name);
+      const relPath = path.relative(INDICATORS_DIR, fullPath).replace(/\\/g, '/');
+      const virtualPath = relPath ? `indicators/${relPath}` : 'indicators';
+      if (entry.isDirectory()) {
+        items.push({ path: virtualPath, type: 'folder' });
+        walk(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.py')) {
+        const isMain = !relPath.includes('/');
+        items.push({ path: virtualPath, type: 'file', isMain });
+      }
+    });
+  };
+
+  walk(INDICATORS_DIR);
+  return items;
+};
+
 module.exports = {
   encodeId,
   decodeId,
@@ -218,4 +242,5 @@ module.exports = {
   renameIndicatorFile,
   deleteIndicatorFile,
   ensureSeed,
+  listIndicatorWorkspace,
 };

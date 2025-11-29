@@ -151,6 +151,12 @@ export const apiClient = {
     return res.json();
   },
 
+  async listIndicatorWorkspace() {
+    const res = await fetch(`${BASE_URL}/api/indicators/workspace/tree`);
+    if (!res.ok) throw new Error('Failed to list indicator workspace');
+    return res.json();
+  },
+
   async runIndicator(
     id: string,
     candles: {
@@ -169,9 +175,14 @@ export const apiClient = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
+      const rawError = body && (body.error || body);
       const message =
-        (body && body.error && (body.error.message || body.error)) || 'Failed to run indicator';
-      throw new Error(message);
+        (rawError && (rawError.message || rawError)) || 'Failed to run indicator';
+      const err = new Error(message) as Error & { details?: any };
+      if (rawError && typeof rawError === 'object') {
+        err.details = rawError;
+      }
+      throw err;
     }
     return res.json();
   },
@@ -344,7 +355,12 @@ export const apiClient = {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body?.error || 'Failed to start Lean backtest');
+      const message = body?.error || 'Failed to start Lean backtest';
+      const err = new Error(message) as Error & { details?: any };
+      if (body && typeof body === 'object') {
+        err.details = body;
+      }
+      throw err;
     }
     return res.json();
   },

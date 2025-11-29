@@ -9,6 +9,7 @@ type PythonEditorProps = {
   className?: string;
   overlayClassName?: string;
   textareaClassName?: string;
+  errorLines?: number[];
 };
 
 const defaultHighlight = (code: string) =>
@@ -16,6 +17,23 @@ const defaultHighlight = (code: string) =>
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+
+const buildHighlightedWithErrors = (code: string, renderer: (code: string) => string, errorLines: number[]) => {
+  if (!errorLines || !errorLines.length) {
+    return renderer(code);
+  }
+  const normalized = Array.from(new Set(errorLines.filter((n) => Number.isFinite(n) && n > 0))).sort((a, b) => a - b);
+  if (!normalized.length) return renderer(code);
+  const rawLines = (code || '').split('\n');
+  const highlightedLines = rawLines.map((line) => renderer(line || ''));
+  const set = new Set(normalized);
+  const wrapped = highlightedLines.map((html, index) => {
+    const lineNumber = index + 1;
+    if (!set.has(lineNumber)) return html;
+    return `<span class="bg-rose-50/80 border-l-2 border-rose-400 -mx-4 px-4">${html}</span>`;
+  });
+  return wrapped.join('\n');
+};
 
 export const PythonEditor: React.FC<PythonEditorProps> = ({
   value,
@@ -26,14 +44,18 @@ export const PythonEditor: React.FC<PythonEditorProps> = ({
   className = '',
   overlayClassName = '',
   textareaClassName = '',
+  errorLines = [],
 }) => {
   const overlayRef = useRef<HTMLPreElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const rendered = useMemo(() => {
     const renderer = highlight || defaultHighlight;
-    return renderer(value || '');
-  }, [value, highlight]);
+    if (!errorLines || !errorLines.length) {
+      return renderer(value || '');
+    }
+    return buildHighlightedWithErrors(value || '', renderer, errorLines);
+  }, [value, highlight, errorLines]);
 
   useEffect(() => {
     if (!overlayRef.current || !inputRef.current) return;

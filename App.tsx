@@ -302,19 +302,21 @@ const AppContent: React.FC = () => {
           indicators={indicators.indicators}
           indicatorOrder={indicators.indicatorOrder}
           setIndicatorOrder={indicators.setIndicatorOrder}
-          indicatorFolders={indicators.indicatorFolders}
+            indicatorFolders={indicators.indicatorFolders}
           addIndicatorFolder={indicators.addIndicatorFolder}
           removeIndicatorFolder={indicators.removeIndicatorFolder}
           selectedIndicatorId={indicators.selectedIndicatorId}
           setSelectedIndicatorId={indicators.setSelectedIndicatorId}
           activeIndicator={indicators.activeIndicator}
           createIndicator={indicators.createIndicator}
-          deleteIndicator={indicators.deleteIndicator}
+            deleteIndicator={indicators.deleteIndicator}
             saveIndicator={indicators.saveIndicator}
             toggleActiveIndicator={indicators.toggleActiveIndicator}
             refreshIndicatorFromDisk={indicators.refreshFromDisk}
             renameIndicator={indicators.renameIndicator}
             updateIndicatorName={indicators.updateIndicatorName}
+            indicatorErrorDetails={indicators.indicatorErrorDetails}
+            leanErrorMeta={leanBacktest.errorMeta}
           />
         );
       case ViewState.ANALYSIS:

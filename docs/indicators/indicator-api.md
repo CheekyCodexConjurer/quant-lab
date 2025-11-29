@@ -27,7 +27,30 @@ O objetivo é permitir que você escreva desde indicadores simples (SMA/EMA) at�
 
 Tudo é feito **localmente**; nenhum código de indicador é enviado para servidores externos.
 
-### 1.2. Entry point
+### 1.2. Layout de workspace (onde colocar os arquivos)
+
+Para que o Strategy Lab e o Indicator Engine encontrem seus indicadores automaticamente, a organiza��o dos arquivos Python segue estas regras:
+
+- **Workspace de indicadores (backend)**  
+  - Todos os arquivos de indicador vivem em `server/indicators/`.  
+  - Arquivos diretamente em `server/indicators/*.py` s�o considerados **indicadores principais** (mains) e aparecem no painel `indicators/` do Strategy Lab (com toggle `Active`).  
+  - Pastas dentro de `server/indicators/` (por exemplo `server/indicators/my_indicator/`) s�o livres para conter m�dulos de suporte (`core.py`, `swings.py`, etc.). Esses arquivos aparecem na �rvore do Strategy Lab como parte do workspace, mas **n�o** s�o indicadores independentes.
+
+- **Entrada principal do indicador**  
+  - Cada indicador principal deve expor `calculate(inputs)` diretamente, ou importar de um m�dulo da pasta:
+    ```py
+    # server/indicators/my-indicator.py
+    from my_indicator.core import calculate
+    ```
+  - O Strategy Lab trata este arquivo como o "descriptor" do indicador. Tudo que estiver na pasta `server/indicators/my_indicator/` � considerado infra interna que o usu�rio/agente pode editar ao vivo.
+
+- **Visao para agentes de c�digo (LLMs)**  
+  - Sempre que criar um novo indicador via agente, garantir que:
+    - o `main` esteja em `server/indicators/<nome>.py` com `def calculate(inputs)` (ou um import como acima);  
+    - qualquer "agente de c�digo" ou subm�dulo fique em `server/indicators/<nome>/**`.  
+  - Assim a �rvore do Strategy Lab reflete automaticamente pastas e arquivos criados, e o app sabe quais s�o indicadores ativ�veis.
+
+### 1.3. Entry point
 
 Todo indicador precisa expor uma função:
 
