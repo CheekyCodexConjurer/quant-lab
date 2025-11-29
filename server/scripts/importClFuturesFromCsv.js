@@ -20,18 +20,32 @@ const { buildCoverageSnapshot } = require('../src/services/datasetCoverageServic
 const CL_DIR = path.join(DATA_DIR, 'cl-futures');
 const ASSET_KEY = 'cl1!';
 
-const parseCsvLine = (line) => {
+// Vendor timezones (documented offsets)
+// - cl-1m.csv  : GMT-6 (CME session / Chicago time)
+// - cl-1d.csv  : GMT+1 (daily bars aligned to session close)
+// - cl-1w/mo   : GMT+1
+const getTimezoneOffsetForFile = (filename) => {
+  const lower = String(filename || '').toLowerCase();
+  if (lower === 'cl-1m.csv') return '-06:00';
+  if (lower === 'cl-1d.csv' || lower === 'cl-1w.csv' || lower === 'cl-1mo.csv') return '+01:00';
+  return '+00:00';
+};
+
+const parseCsvLine = (line, filename) => {
   if (!line) return null;
   const parts = line.split(';');
   if (parts.length < 6) return null;
   const [dateStr, timeStr, openStr, highStr, lowStr, closeStr, volStr] = parts;
-  const dtStr = `${dateStr.trim()} ${timeStr.trim() || '00:00:00'}`;
-  const dt = new Date(
-    dtStr.replace(
+  const normDate = dateStr
+    .trim()
+    .replace(
       /^(\d{2})\/(\d{2})\/(\d{4})/,
       (_, d, m, y) => `${y}-${m}-${d}`
-    )
-  );
+    );
+  const normTime = (timeStr && timeStr.trim()) || '00:00:00';
+  const tz = getTimezoneOffsetForFile(filename);
+  const isoInput = `${normDate}T${normTime}${tz}`;
+  const dt = new Date(isoInput);
   if (Number.isNaN(dt.getTime())) return null;
 
   const open = Number(openStr);
@@ -68,7 +82,7 @@ const readCsvCandles = (filename) => {
   const lines = raw.split(/\r?\n/).filter((line) => line.trim().length > 0);
   const candles = [];
   lines.forEach((line) => {
-    const candle = parseCsvLine(line);
+    const candle = parseCsvLine(line, filename);
     if (candle) candles.push(candle);
   });
   return candles;

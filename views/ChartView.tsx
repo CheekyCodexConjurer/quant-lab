@@ -3,11 +3,13 @@ import { ChevronDown, Eye, EyeOff, Star, StarOff, X, Paintbrush, RotateCcw } fro
 import { LightweightChart, LightweightChartHandle } from '../components/LightweightChart';
 import { AVAILABLE_ASSETS } from '../constants/markets';
 import { TIMEFRAME_LIBRARY } from '../constants/timeframes';
-import { Candle, BacktestResult, CustomIndicator, ChartAppearance } from '../types';
+import { Candle, BacktestResult, CustomIndicator, ChartAppearance, IndicatorOverlay } from '../types';
 import { ChartStyleMenu } from '../components/chart/ChartStyleMenu';
 import { DEFAULT_APPEARANCE } from '../context/AppStateContext';
 import { normalizeSlashes } from '../utils/path';
+import { toTimestampSeconds } from '../utils/timeFormat';
 import { ChartContextMenu } from '../components/chart/ChartContextMenu';
+import { useAppState } from '../context/AppStateContext';
 
 type ChartViewProps = {
   data: Candle[];
@@ -17,6 +19,7 @@ type ChartViewProps = {
   backtestResult: BacktestResult | null;
   indicators: CustomIndicator[];
   indicatorData: Record<string, { time: string | number; value: number }[]>;
+  indicatorOverlays?: Record<string, IndicatorOverlay>;
   indicatorOrder: string[];
   activeSymbol: string;
   onSymbolChange: (symbol: string) => void;
@@ -24,6 +27,7 @@ type ChartViewProps = {
   onTimeframeChange: (timeframe: string) => void;
   onToggleIndicator: (id: string) => void;
   onToggleVisibility: (id: string) => void;
+  onRefreshIndicator: (id: string) => void | Promise<void>;
   timeframes: string[];
   allTimeframes: string[];
   pinnedTimeframes: string[];
@@ -40,6 +44,7 @@ export const ChartView: React.FC<ChartViewProps> = ({
   backtestResult,
   indicators,
   indicatorData,
+  indicatorOverlays,
   indicatorOrder,
   activeSymbol,
   onSymbolChange,
@@ -47,6 +52,7 @@ export const ChartView: React.FC<ChartViewProps> = ({
   onTimeframeChange,
   onToggleIndicator,
   onToggleVisibility,
+  onRefreshIndicator,
   timeframes,
   allTimeframes,
   pinnedTimeframes,
@@ -60,6 +66,7 @@ export const ChartView: React.FC<ChartViewProps> = ({
   error = null,
   onCancelLoad,
 }) => {
+  const { debugMode } = useAppState();
   const visibleIndicators = indicators
     .filter((indicator) => indicator.isActive && indicator.isVisible)
     .sort((a, b) => {
@@ -169,6 +176,24 @@ export const ChartView: React.FC<ChartViewProps> = ({
 
   const handleResetView = () => {
     chartRef.current?.resetView();
+  };
+
+  const handleMoveToLatestIndicator = () => {
+    if (!hasVisibleIndicator) return;
+    let latestTime: string | number | null = null;
+    let latestTs = -Infinity;
+    visibleIndicators.forEach((indicator) => {
+      const series = indicatorData[indicator.id] || [];
+      if (!series.length) return;
+      const lastPoint = series[series.length - 1];
+      const ts = toTimestampSeconds(lastPoint.time);
+      if (ts !== null && ts > latestTs) {
+        latestTs = ts;
+        latestTime = lastPoint.time;
+      }
+    });
+    if (!latestTime) return;
+    chartRef.current?.focusTime(latestTime);
   };
 
   return (
@@ -296,6 +321,15 @@ export const ChartView: React.FC<ChartViewProps> = ({
                 <button onClick={() => onToggleVisibility(indicator.id)} className="ml-2 text-slate-400 hover:text-slate-900">
                   {indicator.isVisible ? <Eye size={12} /> : <EyeOff size={12} />}
                 </button>
+                <button
+                  onClick={() => {
+                    void onRefreshIndicator(indicator.id);
+                  }}
+                  className="ml-1 text-slate-400 hover:text-slate-900"
+                  aria-label="Refresh indicator from disk"
+                >
+                  <RotateCcw size={12} />
+                </button>
                 <button onClick={() => onToggleIndicator(indicator.id)} className="ml-1 text-slate-400 hover:text-rose-500">
                   <X size={12} />
                 </button>
@@ -315,27 +349,95 @@ export const ChartView: React.FC<ChartViewProps> = ({
           trades={backtestResult?.trades}
           lines={
             hasVisibleIndicator
+              ? (() => {
+                  const palette = ['#2962FF', '#ef4444', '#22c55e', '#f59e0b', '#a855f7', '#0ea5e9'];
+                  const lines: { id: string; data: { time: string | number; value: number }[]; color?: string; style?: 'solid' | 'dashed' }[] =
+                    [];
+                  visibleIndicators.forEach((indicator, idx) => {
+                    const baseColor = palette[idx % palette.length];
+                    const mainSeries = indicatorData[indicator.id] || [];
+                    if (mainSeries.length) {
+                      lines.push({ id: indicator.id, data: mainSeries, color: baseColor, style: 'solid' });
+                    }
+                    const overlay = indicatorOverlays?.[indicator.id];
+                    if (overlay) {
+                      if (overlay.series) {
+                        Object.entries(overlay.series).forEach(([key, series]) => {
+                          if (key === 'main') return;
+                          const dataPoints = Array.isArray(series) ? series : [];
+                          if (!dataPoints.length) return;
+                          lines.push({
+                            id: `${indicator.id}:${key}`,
+                            data: dataPoints,
+                            color: baseColor,
+                            style: 'solid',
+                          });
+                        });
+                      }
+                      if (overlay.levels && overlay.levels.length) {
+                        overlay.levels.forEach((level, levelIdx) => {
+                          const points = [
+                            { time: level.timeStart, value: level.price },
+                            { time: level.timeEnd, value: level.price },
+                          ];
+                          lines.push({
+                            id: `${indicator.id}:level:${levelIdx}`,
+                            data: points,
+                            color: baseColor,
+                            style: 'dashed',
+                          });
+                        });
+                      }
+                    }
+                  });
+                  return lines;
+                })()
+              : undefined
+          }
+          indicatorMarkers={
+            hasVisibleIndicator && indicatorOverlays
               ? visibleIndicators
-                  .map((indicator, idx) => {
-                    const series = indicatorData[indicator.id] || [];
-                    if (!series.length) return null;
-                    const palette = ['#2962FF', '#ef4444', '#22c55e', '#f59e0b', '#a855f7', '#0ea5e9'];
-                    const color = palette[idx % palette.length];
-                    return { id: indicator.id, data: series, color };
-                  })
-                  .filter(Boolean)
+                  .flatMap((indicator) => indicatorOverlays[indicator.id]?.markers || [])
+                  .filter((m) => m && m.time) || undefined
               : undefined
           }
           timeframe={activeTimeframe}
           timezone={chartTimezone}
           appearance={chartAppearance}
         />
+        {debugMode && hasVisibleIndicator && (
+          <div className="absolute bottom-4 left-4 z-30 bg-slate-900/80 text-[10px] text-slate-100 px-3 py-2 rounded border border-slate-700 space-y-1 max-w-xs">
+            <div className="font-semibold text-[10px] uppercase tracking-widest text-slate-400">
+              Indicator debug
+            </div>
+            {visibleIndicators.map((indicator) => {
+              const series = indicatorData[indicator.id] || [];
+              const last = series[series.length - 1];
+              return (
+                <div key={indicator.id} className="flex flex-col">
+                  <span className="font-mono text-[10px] text-slate-200">
+                    {indicator.name || indicator.id} — len={series.length}
+                  </span>
+                  {last && (
+                    <span className="font-mono text-[10px] text-slate-400 truncate">
+                      last.time={String(last.time)} value={last.value}
+                    </span>
+                  )}
+                  {!series.length && (
+                    <span className="font-mono text-[10px] text-amber-400">no series for this indicator</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         {contextMenuOpen ? (
           <div ref={contextMenuRef}>
             <ChartContextMenu
               x={contextMenuPos.x}
               y={contextMenuPos.y}
               onReset={handleResetView}
+              onMoveToIndicator={hasVisibleIndicator ? handleMoveToLatestIndicator : undefined}
               onClose={() => setContextMenuOpen(false)}
             />
           </div>

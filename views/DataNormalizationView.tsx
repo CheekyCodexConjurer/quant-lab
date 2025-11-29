@@ -108,7 +108,6 @@ export const DataNormalizationView: React.FC<DataNormalizationViewProps> = ({
   return (
     <MainContent className="h-auto min-h-full">
       <div className="mb-10">
-        <h3 className="text-lg font-medium text-slate-900">Data Settings</h3>
         <p className="text-slate-500 text-sm mt-1">
           Configure how raw tick data is aligned, normalized, and discretized before feeding the
           engine.

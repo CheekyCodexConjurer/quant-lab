@@ -1,5 +1,6 @@
 const express = require('express');
 const { runIndicatorById } = require('../services/indicatorExecutionService');
+const { logInfo } = require('../services/logger');
 
 const router = express.Router();
 
@@ -9,6 +10,11 @@ router.post('/:id/run', async (req, res) => {
     if (!Array.isArray(candles) || candles.length === 0) {
       return res.status(400).json({ error: { type: 'InputError', message: 'candles array is required' } });
     }
+    logInfo('indicatorExecutionRoutes: /:id/run called', {
+      module: 'indicatorExecutionRoute',
+      id: req.params.id,
+      candles: candles.length,
+    });
     const result = await runIndicatorById(req.params.id, candles);
     if (!result.ok) {
       const error = result.error || { type: 'IndicatorError', message: 'indicator execution failed' };
@@ -39,4 +45,3 @@ router.post('/:id/run', async (req, res) => {
 });
 
 module.exports = router;
-

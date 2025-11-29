@@ -4,6 +4,14 @@ setlocal EnableExtensions EnableDelayedExpansion
 REM Launch The Lab dev server from repo root
 cd /d "%~dp0"
 
+REM Configure Python environment for Indicator Execution Engine (if venv exists)
+IF EXIST ".venv\Scripts\python.exe" (
+    set "THELAB_PYTHON_PATH=%~dp0.venv\Scripts\python.exe"
+    echo [launcher] Using Python from venv: %THELAB_PYTHON_PATH%
+) ELSE (
+    echo [launcher] Warning: .venv not found, falling back to system python for indicators.
+)
+
 REM Pick a free dev port (tries in order)
 set PORT_CANDIDATES=3070 5173 4173
 set DEV_PORT=

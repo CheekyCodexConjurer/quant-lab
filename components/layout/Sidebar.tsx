@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { LayoutGrid, BarChart2, Code, Sliders, BookOpen, Github, User, ChevronRight, KeyRound, Info } from 'lucide-react';
+import { LayoutGrid, BarChart2, Code, Sliders, BookOpen, Github, User, ChevronRight, KeyRound, Info, TerminalSquare } from 'lucide-react';
 import { ViewState } from '../../types';
 import { useLicense } from '../../hooks/useLicense';
 
 type SidebarProps = {
   activeView: ViewState;
   onChange: (view: ViewState) => void;
+  debugMode?: boolean;
 };
 
 const SidebarItem = ({
@@ -31,7 +32,7 @@ const SidebarItem = ({
   </button>
 );
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeView, onChange }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ activeView, onChange, debugMode = false }) => {
   const { license, applyKey, clearKey } = useLicense();
   const [openLicense, setOpenLicense] = useState(false);
   const [draft, setDraft] = useState(license.key || '');
@@ -139,63 +140,56 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onChange }) => {
       </div>
 
       <nav className="flex-1 px-6 space-y-1 overflow-y-auto custom-scrollbar">
-        <SidebarItem
-          icon={<LayoutGrid size={18} />}
-          label="Overview"
-          isActive={activeView === ViewState.ANALYSIS}
-          onClick={() => onChange(ViewState.ANALYSIS)}
-        />
-        <SidebarItem
-          icon={<BarChart2 size={18} />}
-          label="Chart"
-          isActive={activeView === ViewState.CHART}
-          onClick={() => onChange(ViewState.CHART)}
-        />
-
-        <div className="pt-4 mt-4 border-t border-slate-100">
-          <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Coding</p>
+        <div className="space-y-1">
+          <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">WORKSPACE</p>
+          <SidebarItem
+            icon={<LayoutGrid size={18} />}
+            label="Dashboard"
+            isActive={activeView === ViewState.ANALYSIS}
+            onClick={() => onChange(ViewState.ANALYSIS)}
+          />
+          <SidebarItem
+            icon={<BarChart2 size={18} />}
+            label="Chart View"
+            isActive={activeView === ViewState.CHART}
+            onClick={() => onChange(ViewState.CHART)}
+          />
           <SidebarItem
             icon={<Code size={18} />}
-            label="Lean Strategy"
+            label="Strategy Lab"
             isActive={activeView === ViewState.STRATEGY}
             onClick={() => onChange(ViewState.STRATEGY)}
           />
-        </div>
-
-        <div className="pt-4 mt-4 border-t border-slate-100">
-          <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Data</p>
           <SidebarItem
             icon={<Sliders size={18} />}
-            label="Data Settings"
+            label="Data Configuration"
             isActive={activeView === ViewState.DATA_NORMALIZATION}
             onClick={() => onChange(ViewState.DATA_NORMALIZATION)}
           />
         </div>
 
         <div className="pt-4 mt-4 border-t border-slate-100">
-          <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">External</p>
+          <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">DOCUMENTATION</p>
           <SidebarItem
             icon={<BookOpen size={18} />}
-            label="API Docs"
+            label="Documentation"
             isActive={activeView === ViewState.API_DOCS}
             onClick={() => onChange(ViewState.API_DOCS)}
           />
           <SidebarItem
             icon={<Github size={18} />}
-            label="Repository"
+            label="Repositories"
             isActive={activeView === ViewState.REPOSITORY}
             onClick={() => onChange(ViewState.REPOSITORY)}
           />
-        </div>
-
-        <div className="pt-4 mt-4 border-t border-slate-100">
-          <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Internal</p>
-          <SidebarItem
-            icon={<BookOpen size={18} />}
-            label="Roadmap"
-            isActive={activeView === ViewState.ROADMAP}
-            onClick={() => onChange(ViewState.ROADMAP)}
-          />
+          {debugMode && (
+            <SidebarItem
+              icon={<TerminalSquare size={18} />}
+              label="Debug Console"
+              isActive={activeView === ViewState.DEBUG}
+              onClick={() => onChange(ViewState.DEBUG)}
+            />
+          )}
         </div>
       </nav>
 

@@ -27,6 +27,21 @@ const loadCandlesFromFile = (filePath) => {
   return candles;
 };
 
+const clearAssetFromDb = (asset) => {
+  const db = getDb();
+  if (!db) {
+    console.warn('[cl-db] SQLite not available; cannot clear existing rows.');
+    return;
+  }
+  console.log(`[cl-db] Clearing existing rows for ${asset}...`);
+  try {
+    db.prepare('DELETE FROM bars WHERE asset = ?').run(asset);
+    console.log('[cl-db] Existing rows cleared.');
+  } catch (error) {
+    console.warn('[cl-db] Failed to clear existing rows for asset', asset, error);
+  }
+};
+
 const ingestTimeframe = (timeframe) => {
   const db = getDb();
   if (!db) {
@@ -58,6 +73,7 @@ const ingestTimeframe = (timeframe) => {
 
 const run = () => {
   console.log('[cl-db] Ingesting CL futures into SQLite from', DATA_DIR);
+  clearAssetFromDb(ASSET);
   TIMEFRAMES.forEach((tf) => ingestTimeframe(tf));
   console.log('[cl-db] Done.');
 };

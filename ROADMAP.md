@@ -274,7 +274,7 @@ Sair do modelo de carregamento full-series em JSON e adotar um engine de dados l
 
 ### 1.4. Indicator Execution Engine (TradingView-style)
 
-- [ ] **Status:** em andamento (Fase 1 - runner + rota /api/indicator-exec implementados).
+- [x] **Status:** Fase 1 concluida (runner + rota `/api/indicator-exec` + modo debug inicial com `/api/debug/*` e `DebugView`). Próximas fases focam em indicadores mais complexos e integraçao profunda com estrategias.
 
 **Objetivo**  
 Permitir que o usuario escreva **qualquer indicador/estrategia em Python** (seguindo uma API simples), salve em `indicators/` ou `strategies/`, e o The Lab execute esse codigo em cima dos candles e desenhe o resultado no grafico – em um fluxo fluido, similar ao TradingView + PineScript, mas 100% local.
@@ -296,8 +296,8 @@ Permitir que o usuario escreva **qualquer indicador/estrategia em Python** (segu
       - niveis horizontais (linhas de suporte/resistencia, Protected High/Low, etc.).
 
 - **Integracao com frontend**
-  - `hooks/useIndicators.ts` passa a solicitar ao backend a execucao dos indicadores ativos, em vez de calcular tudo localmente em TypeScript.
-  - `ChartView` / `LightweightChart` recebem um modelo de overlay mais rico (series, marcadores, niveis) e desenham a estrutura, mantendo o visual minimalista atual.
+  - `hooks/useIndicators.ts` solicita ao backend a execucao dos indicadores ativos em janelas limitadas de candles (hoje ~100 barras mais recentes), com debounce leve e cache em memoria para evitar chamadas repetidas a cada pequeno update de dados.
+  - `ChartView` / `LightweightChart` recebem um modelo de overlay mais rico (series, marcadores, niveis) e desenham a estrutura, mantendo o visual minimalista atual. O grafico pode exibir mais candles do que a janela usada pelo engine; fora da janela, os overlays simplesmente deixam de ser desenhados.
 
 #### 1.4.1. Contrato de indicador (API Python)
 
@@ -308,7 +308,7 @@ Permitir que o usuario escreva **qualquer indicador/estrategia em Python** (segu
   - `docs/indicators/indicator-api.md` (a criar, consolidando exemplos e assinatura)
 - Indicadores Python:
   - `indicators/ema_200.py` (exemplo simples)
-  - `indicators/market-structure.py` (indicador de Estrutura de Mercado, futuro)
+  - `indicators/market-structure.py` (indicador de Estrutura de Mercado, primeira versão focada em swings + BOS)
 
 **Assinatura minima**
 

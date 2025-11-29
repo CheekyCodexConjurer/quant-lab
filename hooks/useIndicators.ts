@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Candle, CustomIndicator, IndicatorOverlay } from '../types';
 import { calculateEMA, NEW_INDICATOR_TEMPLATE, DEFAULT_INDICATOR_CODE } from '../utils/indicators';
 import { apiClient } from '../services/api/client';
@@ -16,6 +16,16 @@ import { ensureRootedPath, normalizeSlashes, toRelativePath } from '../utils/pat
 
 const INDICATOR_ROOT = 'indicators';
 const FOLDERS_KEY = 'thelab.indicatorFolders';
+const MAX_INDICATOR_CANDLES = 100;
+const INDICATOR_DEBOUNCE_MS = 250;
+
+type IndicatorSeriesPoint = { time: string | number; value: number };
+
+type CachedIndicatorResult = {
+  series: IndicatorSeriesPoint[];
+  overlay: IndicatorOverlay;
+  error: string | null;
+};
 
 const seedIndicator = (): CustomIndicator => {
   const now = Date.now();
@@ -51,8 +61,9 @@ const normalizeFolder = (folderPath?: string) => {
 export const useIndicators = (data: Candle[]) => {
   const [indicators, setIndicators] = useState<CustomIndicator[]>([]);
   const [selectedIndicatorId, setSelectedIndicatorIdState] = useState<string | null>(loadSelectedIndicatorId);
-  const [indicatorData, setIndicatorData] = useState<Record<string, { time: string | number; value: number }[]>>({});
+  const [indicatorData, setIndicatorData] = useState<Record<string, IndicatorSeriesPoint[]>>({});
   const [indicatorOverlays, setIndicatorOverlays] = useState<Record<string, IndicatorOverlay>>({});
+  const [indicatorErrors, setIndicatorErrors] = useState<Record<string, string | null>>({});
   const [appliedVersions, setAppliedVersions] = useState<Record<string, number>>(loadAppliedVersions);
   const [nameOverrides, setNameOverrides] = useState<Record<string, string>>(loadIndicatorNames);
   const [indicatorOrder, setIndicatorOrder] = useState<string[]>(loadIndicatorOrder);
@@ -67,6 +78,9 @@ export const useIndicators = (data: Candle[]) => {
     }
     return [];
   });
+  const executionCacheRef = useRef<Record<string, CachedIndicatorResult>>({});
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const runTokenRef = useRef(0);
 
   const setSelectedIndicatorId = (id: string | null) => {
     setSelectedIndicatorIdState(id);
@@ -203,38 +217,89 @@ export const useIndicators = (data: Candle[]) => {
       return;
     }
 
-    let cancelled = false;
+    const cache = executionCacheRef.current;
+    const windowStart = data.length > MAX_INDICATOR_CANDLES ? data.length - MAX_INDICATOR_CANDLES : 0;
+    const windowCandles = data.slice(windowStart);
+    const lastCandle = windowCandles[windowCandles.length - 1];
+    const baseKey = lastCandle ? `${lastCandle.time}|${windowCandles.length}` : 'empty';
 
-    const run = async () => {
-      const series: Record<string, { time: string | number; value: number }[]> = {};
+    let cancelled = false;
+    const runToken = ++runTokenRef.current;
+
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    const timeoutHandle = setTimeout(async () => {
+      const series: Record<string, IndicatorSeriesPoint[]> = {};
       const overlays: Record<string, IndicatorOverlay> = {};
+      const errors: Record<string, string | null> = {};
+
       await Promise.all(
         activeIndicators.map(async (indicator) => {
+          const versionKey = indicator.appliedVersion || indicator.updatedAt || indicator.lastModified || 0;
+          const cacheKey = `${indicator.id}|${versionKey}|${baseKey}`;
+          const cached = cache[cacheKey];
+          if (cached) {
+            series[indicator.id] = cached.series;
+            overlays[indicator.id] = cached.overlay;
+            errors[indicator.id] = cached.error;
+            return;
+          }
+
           try {
-            const response = await apiClient.runIndicator(indicator.id, data);
+            const response = await apiClient.runIndicator(indicator.id, windowCandles);
             const line = Array.isArray(response.series) ? response.series : [];
-            series[indicator.id] = line;
             const overlay: IndicatorOverlay = {
               series: (response.overlay && response.overlay.series) || { main: line },
               markers: (response.overlay && response.overlay.markers) || [],
               levels: (response.overlay && response.overlay.levels) || [],
             };
+            const result: CachedIndicatorResult = {
+              series: line,
+              overlay,
+              error: null,
+            };
+            cache[cacheKey] = result;
+            series[indicator.id] = line;
             overlays[indicator.id] = overlay;
+            errors[indicator.id] = null;
           } catch (error) {
+            const message = (error as Error)?.message || 'Failed to run indicator';
             console.warn('[useIndicators] runIndicator failed', indicator.id, error);
+            const fallbackOverlay: IndicatorOverlay = {
+              series: { main: [] },
+              markers: [],
+              levels: [],
+            };
+            const result: CachedIndicatorResult = {
+              series: [],
+              overlay: fallbackOverlay,
+              error: message,
+            };
+            cache[cacheKey] = result;
+            series[indicator.id] = [];
+            overlays[indicator.id] = fallbackOverlay;
+            errors[indicator.id] = message;
           }
         })
       );
-      if (!cancelled) {
+
+      if (!cancelled && runToken === runTokenRef.current) {
         setIndicatorData(series);
         setIndicatorOverlays(overlays);
+        setIndicatorErrors(errors);
       }
-    };
+    }, INDICATOR_DEBOUNCE_MS);
 
-    run();
+    debounceRef.current = timeoutHandle;
 
     return () => {
       cancelled = true;
+      if (debounceRef.current === timeoutHandle) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
     };
   }, [data, indicators]);
 
@@ -561,5 +626,6 @@ export const useIndicators = (data: Candle[]) => {
     refreshFromDisk,
     renameIndicator,
     updateIndicatorName,
+    indicatorErrors,
   };
 };

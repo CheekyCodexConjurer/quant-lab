@@ -4,6 +4,7 @@ import sys
 import time
 import traceback
 from typing import Any, Dict
+import math
 
 
 def _print_json(payload: Dict[str, Any]) -> None:
@@ -41,9 +42,16 @@ def _to_serializable(obj: Any) -> Any:
   # numpy scalars / arrays
   if np is not None:
     if isinstance(obj, np.generic):
-      return obj.item()
+      return _to_serializable(obj.item())
     if isinstance(obj, np.ndarray):
-      return obj.tolist()
+      # Convert to list and recurse so that NaN/inf are normalized
+      return _to_serializable(obj.tolist())
+
+  # Primitive numbers: coerce NaN/inf to None
+  if isinstance(obj, (int, float)) and not isinstance(obj, bool):
+    if isinstance(obj, float) and not math.isfinite(obj):
+      return None
+    return obj
 
   # Mapping
   if isinstance(obj, dict):
@@ -248,4 +256,3 @@ def main() -> None:
 
 if __name__ == "__main__":
   main()
-

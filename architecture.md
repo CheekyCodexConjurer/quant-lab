@@ -9,10 +9,10 @@ Visao completa para LLMs do frontend, backend, fluxo de dados, Lean e CL Futures
 - Roadmap/documentacao: `ROADMAP.md`, `architecture.md` (este doc), `AGENTS.md` (instrucoes do agente).
 
 ## Frontend
-- Estado global: `context/AppStateContext.tsx` (view ativa, simbolo/timeframe, timezone, datasets baixados, aparencia do grafico, timeframes disponiveis/pinados, licenca local e perfil de usuario). `types.ts` define modelos (`Candle`, `Trade`, `BacktestResult`, etc.), enum `ViewState` e tipos de licenca/perfil (`LicenseState`, `UserProfile`).
+- Estado global: `context/AppStateContext.tsx` (view ativa, simbolo/timeframe, timezone, datasets baixados, aparencia do grafico, timeframes disponiveis/pinados, licenca local, perfil de usuario e `debugMode`). `types.ts` define modelos (`Candle`, `Trade`, `BacktestResult`, etc.), enum `ViewState` (incluindo `DEBUG`) e tipos de licenca/perfil (`LicenseState`, `UserProfile`).
 - Hooks principais: `useIncrementalMarketData` (carrega candles via API com fallback mock), `useIndicators`, `useStrategies`, `useBacktest` (mock local), `useLeanBacktest` (Lean), `useNormalizationSettings`, `useAvailableFrames`.
-- Views (`views/`): `ChartView`, `StrategyView`, `AnalysisView`, `DataNormalizationView`, `ApiDocsView`, `RepositoryView`, `RoadmapView` (renderiza `ROADMAP.md`). `LoginView` existe mas o gating inicial esta desativado por enquanto (aplicacao entra direto no shell principal). `IndicatorView` existe mas esta descontinuada (fluxo unificado em Strategy). A antiga `DataSourcesView` (importacao Dukascopy) foi removida da UI; configuracoes de dados ficaram consolidadas em `DataNormalizationView`.
-- Componentes/layout: `components/layout/Sidebar`, `MainHeader`, `MainContent`. Chart: `components/LightweightChart`. Controles: `ChartStyleMenu`, `ChartTimezoneSelector`. Comuns: `StatsCard`, `DatePickerInput`, `SyncLogConsole`, `components/editor/PythonEditor`, `components/files/FileTree`.
+- Views (`views/`): `ChartView`, `StrategyView`, `AnalysisView`, `DataNormalizationView`, `ApiDocsView`, `RepositoryView`, `RoadmapView` (renderiza `ROADMAP.md`, hoje acessivel apenas via arquivo, sem entrada dedicada no menu) e `DebugView` (console de debug interno para diagnostico de backend/indicadores/datasets). `LoginView` existe mas o gating inicial esta desativado por enquanto (aplicacao entra direto no shell principal). `IndicatorView` existe mas esta descontinuada (fluxo unificado em Strategy). A antiga `DataSourcesView` (importacao Dukascopy) foi removida da UI; configuracoes de dados ficaram consolidadas em `DataNormalizationView`.
+- Componentes/layout: `components/layout/Sidebar`, `MainHeader`, `MainContent`. Chart: `components/LightweightChart`. Debug: `components/debug/DebugTerminal`. Controles: `ChartStyleMenu`, `ChartTimezoneSelector`. Comuns: `StatsCard`, `DatePickerInput`, `SyncLogConsole`, `components/editor/PythonEditor`, `components/files/FileTree`.
 - Servicos e utils: `services/api/client.ts` (REST), `services/backtestEngine.ts` (SMA mock), `utils/timeFormat.ts`, `utils/mockData.ts`, `utils/indicators.ts`, `utils/gapQuantization.ts`, `utils/path.ts`, `utils/storage/indicatorStorage.ts`, `utils/leanResultAdapter.ts`. Constantes: `constants/markets.ts`, `constants/timeframes.ts`, `constants/timezones.ts`.
 - Aparencia/persistencia: `ChartStyleMenu` ajusta `ChartAppearance` no contexto; configuracoes de aparencia, datasets baixados e versoes aplicadas de indicadores/estrategias sao salvos em localStorage.
 - Config frontend: `vite.config.ts` (alias @, porta via `VITE_DEV_PORT` ou 3070), `tsconfig.json` (target ES2022, jsx react-jsx), `metadata.json`, `launcher.bat` (instala deps e inicia front/back).
@@ -20,7 +20,7 @@ Visao completa para LLMs do frontend, backend, fluxo de dados, Lean e CL Futures
 - Testes frontend: inexistentes (somente backend tem testes).
 
 ## Backend
-- Entrypoint: `server/src/index.js` (Express, CORS, JSON, morgan).
+- Entrypoint: `server/src/index.js` (Express, CORS, JSON, morgan, logger leve).
 - Rotas (`server/src/routes/`):
   - `/api/import`: jobs Dukascopy/custom, consulta job (legacy; nao usado pelo frontend atual).
   - `/api/data`: lista datasets e retorna candles por asset/timeframe (com suporte a janelas via `limit`/`to` + endpoints de `summary`).
@@ -28,6 +28,7 @@ Visao completa para LLMs do frontend, backend, fluxo de dados, Lean e CL Futures
   - `/api/indicators` e `/api/strategies`: CRUD de arquivos .py (seed se vazio).
   - `/api/indicator-exec`: executa codigo Python de indicadores sob demanda via runner dedicado.
   - `/api/paths`: helpers de workspace (ex.: `POST /api/paths/open` para abrir a pasta de um arquivo no Explorer/Finder).
+  - `/api/debug`: endpoints internos de debug (`/health`, `/logs`, `/terminal`) usados pela `DebugView` e por agentes para diagnosticar problemas em ambiente local.
   - `/health`: status simples.
 - Servicos (`server/src/services/`):
   - `dukascopyService`: legacy para integracao Dukascopy (mantido apenas por compatibilidade, nao mais exposto na UI).
@@ -46,12 +47,12 @@ Visao completa para LLMs do frontend, backend, fluxo de dados, Lean e CL Futures
 
 ## Fluxos principais
 - **Market data (frontend)**: `useIncrementalMarketData` -> `apiClient.fetchData(asset, timeframe, { limit })` -> backend `/api/data/:asset/:timeframe?limit=MAX_CANDLES` -> `marketWindowService.getWindow` -> `marketStoreSqlite` (para CL) -> janela de candles -> `ChartView`/`LightweightChart`. Para CL, os dados vem dos CSVs (`cl-1m`, `cl-1d`, `cl-1w`, `cl-1mo`) importados por `server/scripts/importClFuturesFromCsv.js` e ingeridos em `server/db/market.db` via `server/scripts/ingestClFuturesToDb.js`.
-- **Indicadores**: `useIndicators` lista/salva via API, persiste selecao/appliedVersion; UI em `StrategyView`.
+- **Indicadores**: `useIndicators` lista/salva via API, persiste selecao/appliedVersion; UI em `StrategyView`. A execucao dos indicadores ativos acontece no backend via `/api/indicator-exec`, sempre em janelas limitadas de candles (hoje ~100 barras mais recentes) com debounce e cache em memoria no hook para evitar travamentos visiveis no grafico, mesmo com indicadores pesados como o de estrutura de mercado.
 - **Estrategias**: `useStrategies` lista/salva .py via API; UI em `StrategyView`.
 - **Backtest local mock**: `useBacktest` + `services/backtestEngine` sobre candles carregados.
 - **Backtest Lean**: `useLeanBacktest` dispara CLI Lean (params de cash/fee/slippage), captura logs/jobId, ao concluir seta resultado externo e navega para Analysis.
 - **Normalizacao**: `useNormalizationSettings` GET/POST `/api/normalization`; `applyGapQuantization` ajusta candles no chart se habilitado.
-- **Roadmap**: `RoadmapView` faz fetch de `ROADMAP.md`, parseia markdown (checklist/strike) e renderiza dinamicamente.
+- **Roadmap**: `RoadmapView` faz fetch de `ROADMAP.md`, parseia markdown (checklist/strike) e renderiza dinamicamente; a view continua no codigo para uso interno, mas o menu dedicado foi removido da UI principal.
 - **Docs/API**: `ApiDocsView` explica estrutura de indicadores/estrategias Python, paths de workspace Lean e libs disponiveis; serve de referencia LLM-friendly.
 
 ## Estrutura de pastas (top-level)
@@ -59,7 +60,7 @@ Visao completa para LLMs do frontend, backend, fluxo de dados, Lean e CL Futures
 - Backend: `server/src/index.js`, `server/src/routes/`, `server/src/services/`, `server/src/constants/`, `server/test/`.
 - Dados gerados: `server/data/`, `server/data/raw/`.
 - Desktop shell (Electron): `desktop/` contem o shell Electron (`desktop/main.cjs`, `desktop/package.json`) que sobe (ou reutiliza) o backend local e abre uma janela unica carregando `http://127.0.0.1:4800` (frontend servido pelo Express). Scripts de lancamento em `desktop-launcher.bat` e `run-desktop.vbs` permitem abrir o app a partir de um atalho do Windows, sem janelas de console visiveis.
-- Docs/meta: `architecture.md` (principal), `ROADMAP.md`, `AGENTS.md`, `metadata.json`; `front-end-architecture.md` e `back-end-architecture.md` agora sao stubs que apontam para este doc.
+- Docs/meta: `architecture.md` (principal), `ROADMAP.md`, `AGENTS.md`, `metadata.json`; `docs/indicators/indicator-api.md` (API completa de indicadores); `front-end-architecture.md` e `back-end-architecture.md` agora sao stubs que apontam para este doc.
 
 ## Desktop shell (Electron)
 - Entrypoint: `desktop/main.cjs` usa Electron para criar uma unica `BrowserWindow` com icone `the-lab.ico`, tamanho inicial ajustado a ~80–85% da area util do monitor (limitado entre 1280x800 e 1600x900), e sem barra de menu/URL (apenas titulo da janela).

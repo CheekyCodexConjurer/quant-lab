@@ -14,7 +14,7 @@ import { StrategyView } from './views/StrategyView';
 import { AnalysisView } from './views/AnalysisView';
 import { ApiDocsView } from './views/ApiDocsView';
 import { RepositoryView } from './views/RepositoryView';
-import { RoadmapView } from './views/RoadmapView';
+import { DebugView } from './views/DebugView';
 import { ViewState } from './types';
 import { apiClient } from './services/api/client';
 import { applyGapQuantization } from './utils/gapQuantization';
@@ -77,6 +77,8 @@ const AppContent: React.FC = () => {
     chartAppearance,
     setChartAppearance,
     license,
+    debugMode,
+    setDebugMode,
     setDatasetRanges,
   } = useAppState();
   const marketData = useIncrementalMarketData();
@@ -231,6 +233,7 @@ const AppContent: React.FC = () => {
             backtestResult={backtestResult}
             indicators={indicators.indicators}
             indicatorData={indicators.indicatorData}
+            indicatorOverlays={indicators.indicatorOverlays}
             indicatorOrder={indicators.indicatorOrder}
             activeSymbol={activeSymbol}
             onSymbolChange={setActiveSymbol}
@@ -238,6 +241,7 @@ const AppContent: React.FC = () => {
             onTimeframeChange={setActiveTimeframe}
             onToggleIndicator={indicators.toggleActiveIndicator}
             onToggleVisibility={indicators.toggleVisibility}
+            onRefreshIndicator={indicators.refreshFromDisk}
             timeframes={chartTimeframes}
             allTimeframes={sortedSymbolTimeframes}
             pinnedTimeframes={selectedTimeframes}
@@ -319,8 +323,8 @@ const AppContent: React.FC = () => {
         return <ApiDocsView />;
       case ViewState.REPOSITORY:
         return <RepositoryView />;
-      case ViewState.ROADMAP:
-        return <RoadmapView />;
+      case ViewState.DEBUG:
+        return <DebugView />;
       default:
         return null;
     }
@@ -328,7 +332,7 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-[#fafafa] text-slate-900 font-sans">
-      <Sidebar activeView={activeView} onChange={setActiveView} />
+      <Sidebar activeView={activeView} onChange={setActiveView} debugMode={debugMode} />
       <main className="flex-1 flex flex-col relative overflow-hidden bg-[#fafafa] min-h-0">
         <MainHeader
           activeView={activeView}
@@ -337,6 +341,17 @@ const AppContent: React.FC = () => {
           repoStatus={repoStatus}
           onRunBacktest={handleRunBacktest}
           licenseMode={license.mode}
+          debugMode={debugMode}
+          onToggleDebugMode={() => {
+            if (license.mode !== 'internal') return;
+            const next = !debugMode;
+            setDebugMode(next);
+            if (next) {
+              setActiveView(ViewState.DEBUG);
+            } else if (activeView === ViewState.DEBUG) {
+              setActiveView(ViewState.CHART);
+            }
+          }}
         />
         <div className="flex-1 px-10 py-8 overflow-y-auto min-h-0">
           <div

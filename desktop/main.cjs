@@ -29,6 +29,32 @@ function isBackendRunning() {
   });
 }
 
+function requestBackendShutdown() {
+  return new Promise((resolve) => {
+    const req = http.request(
+      {
+        hostname: '127.0.0.1',
+        port: BACKEND_PORT,
+        path: '/api/debug/shutdown',
+        method: 'POST',
+        timeout: 1500,
+      },
+      (res) => {
+        res.resume();
+        res.on('end', resolve);
+      }
+    );
+
+    req.on('error', () => resolve());
+    req.on('timeout', () => {
+      req.destroy();
+      resolve();
+    });
+
+    req.end();
+  });
+}
+
 function startBackend() {
   if (backendProcess) {
     return;
@@ -80,10 +106,19 @@ function createMainWindow() {
 
 app.on('ready', async () => {
   const running = await isBackendRunning().catch(() => false);
-  if (!running) {
-    startBackend();
+  if (running) {
+    console.log(`[desktop] Existing backend detected on port ${BACKEND_PORT}, requesting shutdown...`);
+    await requestBackendShutdown();
+    // give a moment for the process to exit
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const stillRunning = await isBackendRunning().catch(() => false);
+    if (stillRunning) {
+      console.log(`[desktop] Backend still running after shutdown request, reusing existing instance.`);
+    } else {
+      startBackend();
+    }
   } else {
-    console.log(`[desktop] Reusing existing backend on port ${BACKEND_PORT}`);
+    startBackend();
   }
   createMainWindow();
 });

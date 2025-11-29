@@ -8,16 +8,17 @@ type MainHeaderProps = {
   repoStatus: 'disconnected' | 'syncing' | 'synced' | 'error';
   onRunBacktest: () => void;
   licenseMode?: 'internal' | 'early-access' | 'expired';
+  debugMode?: boolean;
+  onToggleDebugMode?: () => void;
 };
 
 const titleMap: Record<ViewState, string> = {
-  [ViewState.CHART]: 'Market Analysis',
+  [ViewState.CHART]: '',
   [ViewState.DATA_NORMALIZATION]: '',
-  [ViewState.ANALYSIS]: 'Strategy Performance',
+  [ViewState.ANALYSIS]: '',
   [ViewState.STRATEGY]: '',
-  [ViewState.API_DOCS]: 'API Documentation',
-  [ViewState.REPOSITORY]: 'Repository',
-  [ViewState.ROADMAP]: '',
+  [ViewState.API_DOCS]: '',
+  [ViewState.REPOSITORY]: '',
 };
 
 export const MainHeader: React.FC<MainHeaderProps> = ({
@@ -27,6 +28,8 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
   repoStatus: _repoStatus,
   onRunBacktest: _onRunBacktest,
   licenseMode = 'internal',
+  debugMode = false,
+  onToggleDebugMode,
 }) => {
   const title = titleMap[activeView];
 
@@ -53,6 +56,19 @@ export const MainHeader: React.FC<MainHeaderProps> = ({
         )}
       </div>
       <div className="flex items-center gap-3">
+        {licenseMode === 'internal' && onToggleDebugMode && (
+          <button
+            type="button"
+            onClick={onToggleDebugMode}
+            className={`px-2.5 py-1 text-[10px] font-semibold rounded-full border transition-colors ${
+              debugMode
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-800'
+            }`}
+          >
+            {debugMode ? 'DEBUG ON' : 'DEBUG OFF'}
+          </button>
+        )}
         <span className={`text-[10px] font-semibold px-2.5 py-1 rounded-full border ${badgeTone}`}>{badgeLabel}</span>
       </div>
     </header>

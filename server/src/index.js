@@ -12,13 +12,15 @@ const leanRoutes = require('./routes/leanRoutes');
 const licenseRoutes = require('./routes/licenseRoutes');
 const pathsRoutes = require('./routes/pathsRoutes');
 const indicatorExecutionRoutes = require('./routes/indicatorExecutionRoutes');
+const debugRoutes = require('./routes/debugRoutes');
 
 const PORT = process.env.SERVER_PORT || 4800;
 
 const app = express();
 app.use(cors());
 app.disable('etag');
-app.use(express.json());
+// Accept reasonably large indicator payloads (candles) without truncation.
+app.use(express.json({ limit: '20mb' }));
 app.use((req, res, next) => {
   res.set('Cache-Control', 'no-store');
   next();
@@ -38,6 +40,7 @@ app.use('/api/strategies', strategyRoutes);
 app.use('/api/lean', leanRoutes);
 app.use('/api/license', licenseRoutes);
 app.use('/api/paths', pathsRoutes);
+app.use('/api/debug', debugRoutes);
 
 const distPath = path.resolve(__dirname, '..', '..', 'dist');
 

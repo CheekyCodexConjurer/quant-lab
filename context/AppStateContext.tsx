@@ -21,6 +21,8 @@ type AppState = {
   setChartAppearance: (appearance: Partial<ChartAppearance>) => void;
   license: LicenseState;
   setLicense: (next: LicenseState) => void;
+  debugMode: boolean;
+  setDebugMode: (enabled: boolean) => void;
   user: UserProfile | null;
   setUser: (user: UserProfile | null) => void;
   datasetRanges: Record<string, Record<string, { start?: string; end?: string; count?: number }>>;
@@ -36,6 +38,7 @@ const STORAGE_KEY = 'thelab.selectedTimeframes';
 const TZ_STORAGE_KEY = 'thelab.chartTimezone';
 const DATASETS_STORAGE_KEY = 'thelab.downloadedAssets';
 const APPEARANCE_STORAGE_KEY = 'thelab.chartAppearance';
+const DEBUG_STORAGE_KEY = 'thelab.debugMode';
 const DEFAULT_TIMEZONE_ID = 'America/Sao_Paulo';
 const LICENSE_STORAGE_KEY = 'thelab.licenseState';
 const USER_STORAGE_KEY = 'thelab.userProfile';
@@ -158,6 +161,16 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   const [datasetRanges, setDatasetRangesState] = useState<
     Record<string, Record<string, { start?: string; end?: string; count?: number }>>
   >({});
+  const [debugMode, setDebugModeState] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const stored = window.localStorage.getItem(DEBUG_STORAGE_KEY);
+      if (!stored) return false;
+      return stored === '1' || stored === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     try {
@@ -190,6 +203,14 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
       /* ignore */
     }
   }, [chartAppearance]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DEBUG_STORAGE_KEY, debugMode ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  }, [debugMode]);
 
   useEffect(() => {
     try {
@@ -316,6 +337,8 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
         setChartAppearance,
         license,
         setLicense,
+        debugMode,
+        setDebugMode: setDebugModeState,
         user,
         setUser,
         datasetRanges,

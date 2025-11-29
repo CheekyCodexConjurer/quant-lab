@@ -1118,8 +1118,27 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
 
             <div className="px-6 py-3 border-b border-slate-100 bg-white flex-1 min-h-0 rounded-b-md">
               <div className="relative flex-1 min-h-0 h-full">
-                {activeStrategy ? (
-                  <PythonEditor className="h-full" value={codeDraft} onChange={setCodeDraft} placeholder="Write your Python strategy..." />
+                {activeKind === 'indicator' ? (
+                  activeIndicator ? (
+                    <PythonEditor
+                      className="h-full"
+                      value={codeDraft}
+                      onChange={setCodeDraft}
+                      placeholder="Edit your Python indicator..."
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
+                      <Code size={48} className="mb-4 opacity-20" />
+                      <p className="text-sm font-medium">Select an indicator to edit or create a new one.</p>
+                    </div>
+                  )
+                ) : activeStrategy ? (
+                  <PythonEditor
+                    className="h-full"
+                    value={codeDraft}
+                    onChange={setCodeDraft}
+                    placeholder="Write your Python strategy..."
+                  />
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
                     <Code size={48} className="mb-4 opacity-20" />

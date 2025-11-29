@@ -90,7 +90,7 @@ export enum ViewState {
   STRATEGY = 'STRATEGY',
   API_DOCS = 'API_DOCS',
   REPOSITORY = 'REPOSITORY',
-  ROADMAP = 'ROADMAP'
+  DEBUG = 'DEBUG',
 }
 
 export interface StrategyFile {

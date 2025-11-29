@@ -12,13 +12,14 @@ import {
   createChart,
 } from 'lightweight-charts';
 import type { SeriesMarker } from 'lightweight-charts';
-import { Candle, Trade, ChartAppearance } from '../types';
+import { Candle, Trade, ChartAppearance, IndicatorMarker } from '../types';
 import { deriveMinBarSpacing, formatTickLabel, formatTooltipLabel, timeframeToMinutes, toTimestampSeconds } from '../utils/timeFormat';
 
 interface ChartProps {
   data: Candle[];
   trades?: Trade[];
-  lines?: { id: string; data: { time: string | number; value: number }[]; color?: string }[];
+  lines?: { id: string; data: { time: string | number; value: number }[]; color?: string; style?: 'solid' | 'dashed' }[];
+  indicatorMarkers?: IndicatorMarker[];
   timezone?: string;
   timeframe?: string;
   appearance: ChartAppearance;
@@ -26,6 +27,7 @@ interface ChartProps {
 
 export type LightweightChartHandle = {
   resetView: () => void;
+  focusTime: (time: string | number) => void;
 };
 
 type CandlePoint = {
@@ -36,14 +38,8 @@ type CandlePoint = {
   close: number;
 };
 
-export const LightweightChart = forwardRef<LightweightChartHandle, ChartProps>(({
-  data,
-  trades,
-  lines,
-  timezone = 'UTC',
-  timeframe,
-  appearance,
-}, ref) => {
+export const LightweightChart = forwardRef<LightweightChartHandle, ChartProps>(
+  ({ data, trades, lines, indicatorMarkers, timezone = 'UTC', timeframe, appearance }, ref) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -62,9 +58,39 @@ export const LightweightChart = forwardRef<LightweightChartHandle, ChartProps>((
     }
   };
 
-  useImperativeHandle(ref, () => ({
-    resetView,
-  }), []);
+  const focusTime = (time: string | number) => {
+    if (!chartRef.current) return;
+    const ts = toTimestampSeconds(time);
+    if (ts === null) return;
+    const timeScale = chartRef.current.timeScale();
+    const current = timeScale.getVisibleRange();
+    const center = ts as UTCTimestamp;
+    if (current && typeof current.from === 'number' && typeof current.to === 'number') {
+      const span = (current.to as number) - (current.from as number);
+      const from = (center - span) as UTCTimestamp;
+      const to = center;
+      try {
+        timeScale.setVisibleRange({ from, to });
+      } catch {
+        /* ignore */
+      }
+    } else {
+      try {
+        timeScale.setVisibleRange({ from: center, to: center });
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      resetView,
+      focusTime,
+    }),
+    []
+  );
 
   // Mount chart once
   useEffect(() => {
@@ -234,17 +260,19 @@ export const LightweightChart = forwardRef<LightweightChartHandle, ChartProps>((
     incoming.forEach((line, idx) => {
       if (!line || !Array.isArray(line.data)) return;
       const color = line.color || palette[idx % palette.length];
+      const style = line.style === 'dashed' ? LineStyle.Dashed : LineStyle.Solid;
       let series = lineSeriesMapRef.current[line.id];
       if (!series) {
         series = chartRef.current!.addSeries(LineSeries, {
           color,
           lineWidth: 2,
+          lineStyle: style,
           priceLineVisible: false,
           lastValueVisible: false,
         });
         lineSeriesMapRef.current[line.id] = series;
       } else {
-        series.applyOptions({ color });
+        series.applyOptions({ color, lineStyle: style });
       }
       const normalized = line.data
         .map((point) => {
@@ -257,7 +285,7 @@ export const LightweightChart = forwardRef<LightweightChartHandle, ChartProps>((
     });
   }, [lines]);
 
-  // Update markers when trades change
+  // Update markers when trades or indicator markers change
   useEffect(() => {
     if (!candleSeriesRef.current) return;
     const series = candleSeriesRef.current as any;
@@ -265,8 +293,10 @@ export const LightweightChart = forwardRef<LightweightChartHandle, ChartProps>((
       return;
     }
 
+    const combined: SeriesMarker<UTCTimestamp>[] = [];
+
     if (trades && trades.length > 0) {
-      const markers = trades
+      const tradeMarkers = trades
         .map((t) => {
           const anchor = t.exitTime ?? t.entryTime;
           const ts = anchor ? toTimestampSeconds(anchor) : null;
@@ -279,14 +309,38 @@ export const LightweightChart = forwardRef<LightweightChartHandle, ChartProps>((
             color: profitable ? '#26a69a' : '#ef5350',
             shape: isLong ? 'arrowDown' : 'arrowUp',
             text: t.profit.toFixed(2),
-          };
+          } as SeriesMarker<UTCTimestamp>;
         })
         .filter(Boolean) as SeriesMarker<UTCTimestamp>[];
-      series.setMarkers(markers);
-    } else {
-      series.setMarkers([]);
+      combined.push(...tradeMarkers);
     }
-  }, [trades]);
+
+    if (indicatorMarkers && indicatorMarkers.length > 0) {
+      const overlayMarkers = indicatorMarkers
+        .map((m) => {
+          const ts = toTimestampSeconds(m.time);
+          if (ts === null) return null;
+          const kind = (m.kind || '').toLowerCase();
+          const isBullish = /buy|long|bull/.test(kind);
+          const isBearish = /sell|short|bear/.test(kind);
+          const position = isBullish ? 'belowBar' : 'aboveBar';
+          const shape = isBullish ? 'arrowUp' : isBearish ? 'arrowDown' : 'circle';
+          const color = isBullish ? '#22c55e' : isBearish ? '#ef4444' : '#64748b';
+          const text = kind ? kind.toUpperCase() : '';
+          return {
+            time: ts,
+            position,
+            color,
+            shape,
+            text,
+          } as SeriesMarker<UTCTimestamp>;
+        })
+        .filter(Boolean) as SeriesMarker<UTCTimestamp>[];
+      combined.push(...overlayMarkers);
+    }
+
+    series.setMarkers(combined);
+  }, [trades, indicatorMarkers]);
 
   return <div ref={chartContainerRef} className="w-full h-full" />;
 });

@@ -35,7 +35,6 @@ export const RepositoryView: React.FC = () => {
   return (
     <MainContent className="bg-white border border-slate-200 p-10 shadow-sm min-h-[560px] h-auto min-h-full">
       <div className="border-b border-slate-100 pb-6 mb-8">
-        <h1 className="text-3xl font-light text-slate-900 mb-2">Repository References</h1>
         <p className="text-slate-500 text-sm">
           Canonical repositories powering this workspace. Links open in a new tab.
         </p>
@@ -47,12 +46,6 @@ export const RepositoryView: React.FC = () => {
           description="Main application repository (this project). Contains frontend, backend, and data import tooling."
           url="https://github.com/CheekyCodexConjurer/quant-lab"
           badge="Primary"
-        />
-        <RepoCard
-          title="dukascopy-node"
-          description="Data source wrapper used for Dukascopy imports. Pulled as an external dependency."
-          url="https://github.com/Leo4815162342/dukascopy-node"
-          badge="Data provider"
         />
         <RepoCard
           title="QuantConnect Lean"
@@ -67,7 +60,7 @@ export const RepositoryView: React.FC = () => {
         <ul className="text-sm text-slate-600 space-y-2 list-disc list-inside">
           <li>Both links are public GitHub repositories; use them for cloning, issues, or inspecting the source.</li>
           <li>The application UI mirrors this list (no redirects to unavailable repos).</li>
-          <li>Dukascopy imports rely on <code className="font-mono">dukascopy-node</code>; keep it pinned/updated as needed.</li>
+          <li>The Lean integration expects a local installation of the QuantConnect Lean engine cloned from the repository above.</li>
         </ul>
       </div>
     </MainContent>

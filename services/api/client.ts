@@ -296,6 +296,37 @@ export const apiClient = {
     return res.json();
   },
 
+  async debugHealth() {
+    const res = await fetch(`${BASE_URL}/api/debug/health`);
+    if (!res.ok) throw new Error('Failed to load debug health');
+    return res.json();
+  },
+
+  async debugLogs(params: { level?: string; module?: string; limit?: number } = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.level) searchParams.set('level', params.level);
+    if (params.module) searchParams.set('module', params.module);
+    if (typeof params.limit === 'number') searchParams.set('limit', String(params.limit));
+    const qs = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    const res = await fetch(`${BASE_URL}/api/debug/logs${qs}`);
+    if (!res.ok) throw new Error('Failed to load debug logs');
+    return res.json();
+  },
+
+  async debugTerminal(input: string) {
+    const res = await fetch(`${BASE_URL}/api/debug/terminal`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ input }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const message = body?.error?.message || 'Failed to execute debug command';
+      throw new Error(message);
+    }
+    return res.json();
+  },
+
   async runLeanBacktest(payload: {
     asset: string;
     timeframe: string;
