@@ -16,7 +16,7 @@ import { ensureRootedPath, normalizeSlashes, toRelativePath } from '../utils/pat
 
 const INDICATOR_ROOT = 'indicators';
 const FOLDERS_KEY = 'thelab.indicatorFolders';
-const MAX_INDICATOR_CANDLES = 100;
+const MAX_INDICATOR_CANDLES = 1000;
 const INDICATOR_DEBOUNCE_MS = 250;
 
 type IndicatorSeriesPoint = { time: string | number; value: number };

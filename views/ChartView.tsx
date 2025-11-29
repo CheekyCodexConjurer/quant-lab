@@ -66,6 +66,7 @@ export const ChartView: React.FC<ChartViewProps> = ({
   error = null,
   onCancelLoad,
 }) => {
+  const MAX_DRAWINGS_PER_INDICATOR = 200;
   const { debugMode } = useAppState();
   const visibleIndicators = indicators
     .filter((indicator) => indicator.isActive && indicator.isVisible)
@@ -375,7 +376,10 @@ export const ChartView: React.FC<ChartViewProps> = ({
                         });
                       }
                       if (overlay.levels && overlay.levels.length) {
-                        overlay.levels.forEach((level, levelIdx) => {
+                        const levels = overlay.levels.slice(
+                          Math.max(0, overlay.levels.length - MAX_DRAWINGS_PER_INDICATOR)
+                        );
+                        levels.forEach((level, levelIdx) => {
                           const points = [
                             { time: level.timeStart, value: level.price },
                             { time: level.timeEnd, value: level.price },
@@ -397,7 +401,11 @@ export const ChartView: React.FC<ChartViewProps> = ({
           indicatorMarkers={
             hasVisibleIndicator && indicatorOverlays
               ? visibleIndicators
-                  .flatMap((indicator) => indicatorOverlays[indicator.id]?.markers || [])
+                  .flatMap((indicator) => {
+                    const raw = indicatorOverlays[indicator.id]?.markers || [];
+                    const start = Math.max(0, raw.length - MAX_DRAWINGS_PER_INDICATOR);
+                    return raw.slice(start);
+                  })
                   .filter((m) => m && m.time) || undefined
               : undefined
           }

@@ -5,7 +5,6 @@ import { useToast } from '../components/common/Toast';
 import { MainContent } from '../components/layout/MainContent';
 import { FileTree, FileTreeNode } from '../components/files/FileTree';
 import { PythonEditor } from '../components/editor/PythonEditor';
-import { LeanLogPanel } from '../components/lean/LeanLogPanel';
 import { StrategyLogPanel } from '../components/strategy/StrategyLogPanel';
 import { LeanSettingsPanel } from '../components/lean/LeanSettingsPanel';
 import { ensureRootedPath, normalizeSlashes, toRelativePath, truncateMiddle } from '../utils/path';
@@ -59,6 +58,7 @@ const STRATEGY_ROOT = 'strategies';
 const INDICATOR_ROOT = 'indicators';
 const PANEL_WIDTH_CLASS = 'w-[13.5rem] min-w-[13.5rem] max-w-[15rem]';
 const WORKSPACE_FOLDERS_KEY = 'thelab.workspaceFolders';
+const TREE_EXPANDED_KEY = 'thelab.strategyView.expanded';
 
 const derivePath = (strategy: StrategyFile) => {
   const base = strategy.filePath || `${strategy.name || strategy.id}.py`;
@@ -301,7 +301,27 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
   const addToast = useToast();
   const [codeDraft, setCodeDraft] = useState(activeStrategy?.code ?? '');
   const [isSaving, setIsSaving] = useState(false);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ [STRATEGY_ROOT]: true, [INDICATOR_ROOT]: true });
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') {
+      return { [STRATEGY_ROOT]: true, [INDICATOR_ROOT]: true };
+    }
+    try {
+      const raw = window.localStorage.getItem(TREE_EXPANDED_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            [STRATEGY_ROOT]: true,
+            [INDICATOR_ROOT]: true,
+            ...parsed,
+          };
+        }
+      }
+    } catch {
+      // ignore parse errors and fall back to defaults
+    }
+    return { [STRATEGY_ROOT]: true, [INDICATOR_ROOT]: true };
+  });
   const [extraFolders, setExtraFolders] = useState<string[]>([]);
   const [indicatorWorkspaceItems, setIndicatorWorkspaceItems] = useState<{ path: string; type: 'file' | 'folder'; isMain?: boolean }[]>([]);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -310,7 +330,6 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
   const [settingsDraft, setSettingsDraft] = useState<{ cash: number; feeBps: number; slippageBps: number }>(leanParams);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [activeKind, setActiveKind] = useState<'strategy' | 'indicator'>('strategy');
-  const [indicatorLogs, setIndicatorLogs] = useState<string[]>([]);
   const [workspaceFolders, setWorkspaceFolders] = useState<string[]>([]);
   const settingsMenu = useHoverMenu({ closeDelay: 150 });
   const createMenu = useHoverMenu({ closeDelay: 150 });
@@ -318,6 +337,7 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
   const [renderCreateMenu, setRenderCreateMenu] = useState(false);
   const [strategyLogEvents, setStrategyLogEvents] = useState<StrategyLabError[]>([]);
   const [editorErrorLines, setEditorErrorLines] = useState<number[]>([]);
+  const leanLogIndexRef = useRef(0);
   const clearActionTimer = () => {
     if (actionMenuCloseTimer.current) {
       clearTimeout(actionMenuCloseTimer.current);
@@ -334,6 +354,10 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
       settingsSaveTimer.current = null;
     }
   };
+
+  const activeIndicatorError = activeIndicator ? indicatorErrorDetails[activeIndicator.id] || null : null;
+  const activeStrategyError = leanErrorMeta || null;
+  const currentEditorError = activeKind === 'indicator' ? activeIndicatorError : activeStrategyError;
 
   useEffect(() => {
     if (!activeIndicator) return;
@@ -352,6 +376,28 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
       setEditorErrorLines([leanErrorMeta.line]);
     }
   }, [leanErrorMeta]);
+
+  useEffect(() => {
+    if (!Array.isArray(leanLogs) || leanLogs.length === 0) {
+      leanLogIndexRef.current = 0;
+      return;
+    }
+    let start = leanLogIndexRef.current;
+    if (start > leanLogs.length) {
+      start = 0;
+    }
+    for (let i = start; i < leanLogs.length; i += 1) {
+      const line = leanLogs[i];
+      if (!line) continue;
+      appendStrategyLogEvent({
+        source: 'lean',
+        type: 'LeanLog',
+        message: String(line),
+        createdAt: Date.now(),
+      });
+    }
+    leanLogIndexRef.current = leanLogs.length;
+  }, [leanLogs]);
 
   const appendStrategyLogEvent = (event: StrategyLabError) => {
     setStrategyLogEvents((prev) => {
@@ -525,7 +571,12 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
         if (!activeIndicator) return;
         await saveIndicator(activeIndicator.id, codeDraft || activeIndicator.code || '');
         addToast('Indicator saved, applied to chart, and file updated.', 'success');
-        setIndicatorLogs((prev) => [...prev, `[indicator: ${activeIndicator.name || activeIndicator.id}] saved`]);
+        appendStrategyLogEvent({
+          source: 'indicator',
+          type: 'Info',
+          message: `[indicator: ${activeIndicator.name || activeIndicator.id}] saved`,
+          createdAt: Date.now(),
+        });
       } else {
         if (!activeStrategy) return;
         await onSave(codeDraft);
@@ -542,7 +593,12 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
       try {
         await refreshIndicatorFromDisk(selectedIndicatorId);
         addToast('Indicator reloaded from disk.', 'success');
-        setIndicatorLogs((prev) => [...prev, `[indicator: ${activeIndicator?.name || activeIndicator?.id || selectedIndicatorId}] reloaded`]);
+        appendStrategyLogEvent({
+          source: 'indicator',
+          type: 'Info',
+          message: `[indicator: ${activeIndicator?.name || activeIndicator?.id || selectedIndicatorId}] reloaded`,
+          createdAt: Date.now(),
+        });
       } catch (error) {
         addToast('Failed to reload indicator from disk.', 'error');
         console.warn('[indicator] refreshFromDisk failed', error);
@@ -568,7 +624,12 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
       if (activeKind === 'indicator' && activeIndicator) {
         await saveIndicator(activeIndicator.id, content, activeIndicator.name, activeIndicator.filePath);
         setCodeDraft(content);
-        setIndicatorLogs((prev) => [...prev, `[indicator: ${activeIndicator.name || activeIndicator.id}] imported`]);
+        appendStrategyLogEvent({
+          source: 'indicator',
+          type: 'Info',
+          message: `[indicator: ${activeIndicator.name || activeIndicator.id}] imported`,
+          createdAt: Date.now(),
+        });
         addToast('Indicator imported and saved.', 'success');
       } else {
         const cleanName = file.name.replace(/\.py$/i, '').replace(/[^A-Za-z0-9_-]/g, '_') || 'ImportedStrategy';
@@ -813,7 +874,19 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
           <FileTree
             root={tree}
             expanded={expanded}
-            onToggle={(path, next) => setExpanded((prev) => ({ ...prev, [path]: next }))}
+            onToggle={(path, next) =>
+              setExpanded((prev) => {
+                const nextState = { ...prev, [path]: next };
+                if (typeof window !== 'undefined') {
+                  try {
+                    window.localStorage.setItem(TREE_EXPANDED_KEY, JSON.stringify(nextState));
+                  } catch {
+                    // ignore storage errors
+                  }
+                }
+                return nextState;
+              })
+            }
             selectedPath={activePath || undefined}
             renamingPath={renamingPath}
             onRenameSubmit={handleRename}
@@ -870,7 +943,10 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
                     <MoreVertical size={14} />
                   </button>
                   {folderMenuPath === node.path ? (
-                    <div className="absolute right-0 top-6 w-40 bg-white border border-slate-200 shadow-lg rounded-sm py-1 text-[11px] text-slate-700 transition duration-150 ease-out origin-top z-30">
+                    <div
+                      className="absolute right-0 top-6 w-40 bg-white border border-slate-200 shadow-lg rounded-sm py-1 text-[11px] text-slate-700 transition-opacity duration-150 ease-out origin-top z-30"
+                      onMouseLeave={() => setFolderMenuPath(null)}
+                    >
                       <button
                         className="w-full text-left px-3 py-1.5 hover:bg-slate-50 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={(e) => {
@@ -1216,6 +1292,28 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
             </div>
 
             <div className="px-6 py-3 border-b border-slate-100 bg-white flex-1 min-h-0 rounded-b-md">
+              {currentEditorError ? (
+                <div className="mb-2 px-3 py-1.5 rounded border border-amber-200 bg-amber-50 flex items-center justify-between">
+                  <div className="text-[11px] text-amber-900">
+                    <span className="font-semibold">
+                      {activeKind === 'indicator' ? 'Indicator error' : 'Strategy error'}
+                    </span>
+                    {typeof currentEditorError.line === 'number' && (
+                      <span className="ml-1 text-amber-800">line {currentEditorError.line}</span>
+                    )}
+                    <span className="ml-2">{currentEditorError.message}</span>
+                  </div>
+                  {typeof currentEditorError.line === 'number' && (
+                    <button
+                      type="button"
+                      className="ml-3 text-[11px] px-2 py-0.5 rounded border border-amber-300 text-amber-900 hover:bg-amber-100"
+                      onClick={() => setEditorErrorLines([currentEditorError.line as number])}
+                    >
+                      Go to line
+                    </button>
+                  )}
+                </div>
+              ) : null}
               <div className="relative flex-1 min-h-0 h-full">
                 {activeKind === 'indicator' ? (
                   activeIndicator ? (
@@ -1251,7 +1349,7 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
           </div>
 
           <div className="h-px bg-slate-200" />
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="mt-4">
             <StrategyLogPanel
               events={strategyLogEvents}
               onJumpToLocation={(event) => {
@@ -1265,7 +1363,6 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
                 }
               }}
             />
-            <LeanLogPanel status={leanStatus} jobId={leanJobId} logs={[...indicatorLogs, ...leanLogs]} />
           </div>
         </div>
       </div>

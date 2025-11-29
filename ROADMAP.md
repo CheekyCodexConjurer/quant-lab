@@ -296,7 +296,7 @@ Permitir que o usuario escreva **qualquer indicador/estrategia em Python** (segu
       - niveis horizontais (linhas de suporte/resistencia, Protected High/Low, etc.).
 
 - **Integracao com frontend**
-  - `hooks/useIndicators.ts` solicita ao backend a execucao dos indicadores ativos em janelas limitadas de candles (hoje ~100 barras mais recentes), com debounce leve e cache em memoria para evitar chamadas repetidas a cada pequeno update de dados.
+  - `hooks/useIndicators.ts` solicita ao backend a execucao dos indicadores ativos em janelas limitadas de candles (hoje ~1000 barras mais recentes), com debounce leve e cache em memoria para evitar chamadas repetidas a cada pequeno update de dados. No chart, cada indicador pode desenhar no m�ximo ~200 elementos de overlay (linhas e marcadores) para manter o visual limpo.
   - `ChartView` / `LightweightChart` recebem um modelo de overlay mais rico (series, marcadores, niveis) e desenham a estrutura, mantendo o visual minimalista atual. O grafico pode exibir mais candles do que a janela usada pelo engine; fora da janela, os overlays simplesmente deixam de ser desenhados.
 
 #### 1.4.1. Contrato de indicador (API Python)

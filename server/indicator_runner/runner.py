@@ -72,6 +72,11 @@ def _load_indicator_module(script_path: str):
   import importlib.util
 
   script_path = os.path.abspath(script_path)
+  # Ensure the indicator workspace directory is on sys.path so that
+  # imports like `from market_structure.core import calculate` work.
+  indicator_root = os.path.dirname(script_path)
+  if indicator_root not in sys.path:
+    sys.path.insert(0, indicator_root)
   module_name = "__thelab_indicator__"
 
   spec = importlib.util.spec_from_file_location(module_name, script_path)
