@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { LayoutGrid, BarChart2, Code, Database, Sliders, BookOpen, Github, User, ChevronRight, KeyRound, Info } from 'lucide-react';
+import { LayoutGrid, BarChart2, Code, Sliders, BookOpen, Github, User, ChevronRight, KeyRound, Info } from 'lucide-react';
 import { ViewState } from '../../types';
 import { useLicense } from '../../hooks/useLicense';
 
@@ -164,12 +164,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeView, onChange }) => {
 
         <div className="pt-4 mt-4 border-t border-slate-100">
           <p className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Data</p>
-          <SidebarItem
-            icon={<Database size={18} />}
-            label="Data Sources"
-            isActive={activeView === ViewState.DATA}
-            onClick={() => onChange(ViewState.DATA)}
-          />
           <SidebarItem
             icon={<Sliders size={18} />}
             label="Data Settings"

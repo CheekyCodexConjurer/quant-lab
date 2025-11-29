@@ -8,6 +8,31 @@ export interface Candle {
   volume?: number;
 }
 
+// Generic indicator overlay models (used by the Indicator Execution Engine)
+export interface IndicatorSeriesPoint {
+  time: string | number;
+  value: number;
+}
+
+export interface IndicatorMarker {
+  time: string | number;
+  value?: number;
+  kind: string;
+}
+
+export interface IndicatorLevel {
+  timeStart: string | number;
+  timeEnd: string | number;
+  price: number;
+  kind: string;
+}
+
+export interface IndicatorOverlay {
+  series: Record<string, IndicatorSeriesPoint[]>;
+  markers: IndicatorMarker[];
+  levels: IndicatorLevel[];
+}
+
 export interface Trade {
   id: string;
   entryTime: string | number;
@@ -60,7 +85,6 @@ export interface CustomIndicator {
 
 export enum ViewState {
   CHART = 'CHART',
-  DATA = 'DATA',
   DATA_NORMALIZATION = 'DATA_NORMALIZATION',
   ANALYSIS = 'ANALYSIS',
   STRATEGY = 'STRATEGY',

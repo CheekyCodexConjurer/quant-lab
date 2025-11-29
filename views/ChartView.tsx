@@ -173,20 +173,6 @@ export const ChartView: React.FC<ChartViewProps> = ({
 
   return (
     <div className="h-full min-h-[720px] min-w-0 flex-1 w-full flex flex-col bg-white border border-slate-200 p-1 shadow-sm relative">
-      {(loading || ingesting) && (
-        <div className="absolute top-4 right-4 z-20 bg-white/90 backdrop-blur border border-slate-200 text-[11px] font-semibold text-slate-600 px-3 py-1.5 rounded-sm shadow-sm flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-          <span>{ingesting ? 'Loading data...' : 'Fetching data...'}</span>
-          {onCancelLoad ? (
-            <button
-              onClick={onCancelLoad}
-              className="ml-2 px-2 py-0.5 text-[10px] font-semibold text-slate-600 border border-slate-200 rounded-sm hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-          ) : null}
-        </div>
-      )}
       {error ? (
         <div className="absolute top-16 right-4 z-20 bg-rose-50 border border-rose-200 text-[11px] text-rose-700 px-3 py-1.5 rounded-sm shadow-sm">
           {error}
@@ -323,16 +309,6 @@ export const ChartView: React.FC<ChartViewProps> = ({
         onContextMenu={handleContextMenu}
         ref={chartAreaRef}
       >
-        <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
-          <button
-            onClick={handleResetView}
-            className="p-1.5 rounded-sm border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 shadow-sm"
-            title="Reset chart view"
-            aria-label="Reset chart view"
-          >
-            <RotateCcw size={14} />
-          </button>
-        </div>
         <LightweightChart
           ref={chartRef}
           data={data}

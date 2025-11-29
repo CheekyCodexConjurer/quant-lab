@@ -14,6 +14,17 @@ dist-ssr
 server/data
 server/lean_workspace
 
+# SQLite market database (generated locally from CL futures JSON)
+server/db/
+
+# Local CL futures CSV dumps (vendor data, not versioned)
+tmp_cl-1d/
+tmp_cl-1m/
+tmp_cl-1mo/
+tmp_cl-1w/
+temp_cl_1w/
+temp_cl_1w_bk/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

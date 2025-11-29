@@ -159,4 +159,5 @@ module.exports = {
   TIMEFRAME_DEFS,
   DEFAULT_TIMEFRAMES,
   buildTimeframesFromTicks,
+  aggregateCandles,
 };

@@ -1,5 +1,13 @@
 const express = require('express');
-const { listIndicators, readIndicator, writeIndicator, ensureSeed, encodeId, deleteIndicatorFile } = require('../services/indicatorFileService');
+const {
+  listIndicators,
+  readIndicator,
+  writeIndicator,
+  ensureSeed,
+  encodeId,
+  deleteIndicatorFile,
+  renameIndicatorFile,
+} = require('../services/indicatorFileService');
 const { setIndicatorActive } = require('../services/indicatorStateStore');
 
 const router = express.Router();
@@ -22,7 +30,20 @@ router.get('/:id', (req, res) => {
 router.post('/:id', (req, res) => {
   ensureSeed();
   const { code, filePath, active } = req.body || {};
-  const item = writeIndicator(req.params.id, code ?? '', filePath, active);
+  const item = writeIndicator(req.params.id, code, filePath, active);
+  res.json({ item });
+});
+
+router.post('/:id/rename', (req, res) => {
+  ensureSeed();
+  const { filePath } = req.body || {};
+  if (!filePath) {
+    return res.status(400).json({ error: 'filePath is required' });
+  }
+  const item = renameIndicatorFile(req.params.id, filePath);
+  if (!item) {
+    return res.status(404).json({ error: 'indicator not found' });
+  }
   res.json({ item });
 });
 

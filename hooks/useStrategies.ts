@@ -251,32 +251,34 @@ export const useStrategies = () => {
   const updateStrategyPath = async (id: string, nextPath: string) => {
     const strategy = strategies.find((s) => s.id === id);
     if (!strategy) return;
-    const code = strategy.code || '';
-    const response = await apiClient.saveStrategy(id, { code, filePath: nextPath });
+    const response = await apiClient.renameStrategy(id, { filePath: nextPath });
     const item = response.item;
-    const version = item?.lastModified || Date.now();
-    const newId = item?.id || id;
+    if (!item) return;
+    const version = item.lastModified || strategy.lastModified || Date.now();
+    const newId = item.id || id;
     setStrategies((prev) =>
       prev.map((s) =>
         s.id === id
           ? {
               ...s,
               id: newId,
-              code,
-              filePath: item?.filePath || nextPath,
+              filePath: item.filePath || strategy.filePath,
               lastModified: version,
-              sizeBytes: code.length,
+              sizeBytes: item.sizeBytes ?? s.sizeBytes,
               appliedVersion: version,
             }
           : s
       )
     );
-    setSelectedId(newId);
-    persistSelectedId(newId);
+    setSelectedId((current) => {
+      const nextSelected = current === id || current === newId ? newId : current;
+      persistSelectedId(nextSelected);
+      return nextSelected;
+    });
     setAppliedVersion(version);
     persistAppliedVersion(version);
     const prevPath = normalizePath(strategy.filePath);
-    const nextNorm = normalizePath(item?.filePath || nextPath);
+    const nextNorm = normalizePath(item.filePath || nextPath);
     if (nextNorm) {
       const reordered = strategyOrder.length
         ? strategyOrder.map((path) => (normalizePath(path) === prevPath ? nextNorm : path))

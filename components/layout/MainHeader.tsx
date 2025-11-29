@@ -12,7 +12,6 @@ type MainHeaderProps = {
 
 const titleMap: Record<ViewState, string> = {
   [ViewState.CHART]: 'Market Analysis',
-  [ViewState.DATA]: '',
   [ViewState.DATA_NORMALIZATION]: '',
   [ViewState.ANALYSIS]: 'Strategy Performance',
   [ViewState.STRATEGY]: '',

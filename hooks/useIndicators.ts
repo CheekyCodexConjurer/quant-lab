@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Candle, CustomIndicator } from '../types';
+import { Candle, CustomIndicator, IndicatorOverlay } from '../types';
 import { calculateEMA, NEW_INDICATOR_TEMPLATE, DEFAULT_INDICATOR_CODE } from '../utils/indicators';
 import { apiClient } from '../services/api/client';
 import {
@@ -52,6 +52,7 @@ export const useIndicators = (data: Candle[]) => {
   const [indicators, setIndicators] = useState<CustomIndicator[]>([]);
   const [selectedIndicatorId, setSelectedIndicatorIdState] = useState<string | null>(loadSelectedIndicatorId);
   const [indicatorData, setIndicatorData] = useState<Record<string, { time: string | number; value: number }[]>>({});
+  const [indicatorOverlays, setIndicatorOverlays] = useState<Record<string, IndicatorOverlay>>({});
   const [appliedVersions, setAppliedVersions] = useState<Record<string, number>>(loadAppliedVersions);
   const [nameOverrides, setNameOverrides] = useState<Record<string, string>>(loadIndicatorNames);
   const [indicatorOrder, setIndicatorOrder] = useState<string[]>(loadIndicatorOrder);
@@ -192,20 +193,49 @@ export const useIndicators = (data: Candle[]) => {
   useEffect(() => {
     if (!data.length) {
       setIndicatorData({});
+      setIndicatorOverlays({});
       return;
     }
     const activeIndicators = indicators.filter((item) => item.isActive);
     if (!activeIndicators.length) {
       setIndicatorData({});
+      setIndicatorOverlays({});
       return;
     }
-    const series: Record<string, { time: string | number; value: number }[]> = {};
-    activeIndicators.forEach((indicator) => {
-      const digits = (indicator.name || indicator.id).match(/\d+/);
-      const period = digits ? parseInt(digits[0], 10) || 200 : 200;
-      series[indicator.id] = calculateEMA(data, period);
-    });
-    setIndicatorData(series);
+
+    let cancelled = false;
+
+    const run = async () => {
+      const series: Record<string, { time: string | number; value: number }[]> = {};
+      const overlays: Record<string, IndicatorOverlay> = {};
+      await Promise.all(
+        activeIndicators.map(async (indicator) => {
+          try {
+            const response = await apiClient.runIndicator(indicator.id, data);
+            const line = Array.isArray(response.series) ? response.series : [];
+            series[indicator.id] = line;
+            const overlay: IndicatorOverlay = {
+              series: (response.overlay && response.overlay.series) || { main: line },
+              markers: (response.overlay && response.overlay.markers) || [],
+              levels: (response.overlay && response.overlay.levels) || [],
+            };
+            overlays[indicator.id] = overlay;
+          } catch (error) {
+            console.warn('[useIndicators] runIndicator failed', indicator.id, error);
+          }
+        })
+      );
+      if (!cancelled) {
+        setIndicatorData(series);
+        setIndicatorOverlays(overlays);
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
   }, [data, indicators]);
 
   const createIndicator = (folderPath?: string) => {
@@ -372,6 +402,76 @@ export const useIndicators = (data: Candle[]) => {
     });
   };
 
+  const renameIndicator = async (id: string, nextWorkspacePath: string, name: string) => {
+    const currentIndicator = indicators.find((indicator) => indicator.id === id);
+    if (!currentIndicator) return;
+    const resolvedPath = toIndicatorRelativePath(nextWorkspacePath);
+    const payload = resolvedPath ? { filePath: resolvedPath } : { filePath: nextWorkspacePath };
+    const response = await apiClient.renameIndicator(id, payload);
+    const item = response.item;
+    if (!item) return;
+    const newId = item.id || id;
+    const nextFilePath = item.filePath || currentIndicator.filePath;
+    const appliedVersion = item.lastModified ?? currentIndicator.appliedVersion;
+
+    setAppliedVersions((prev) => {
+      const updated = { ...prev, [newId]: appliedVersion };
+      if (newId !== id) {
+        delete updated[id];
+      }
+      persistAppliedVersions(updated);
+      return updated;
+    });
+
+    setIndicators((prev) =>
+      prev.map((indicator) =>
+        indicator.id === id
+          ? {
+              ...indicator,
+              id: newId,
+              name,
+              filePath: nextFilePath,
+              lastModified: item.lastModified ?? indicator.lastModified,
+              sizeBytes: item.sizeBytes ?? indicator.sizeBytes,
+              updatedAt: Date.now(),
+              appliedVersion,
+              hasUpdate: false,
+            }
+          : indicator
+      )
+    );
+
+    const prevPath = normalizeSlashes(currentIndicator.filePath || '');
+    const nextPath = normalizeSlashes(nextFilePath || '');
+    if (nextPath) {
+      const reordered = indicatorOrder.length
+        ? indicatorOrder.map((path) => (normalizeSlashes(path) === prevPath ? nextPath : path))
+        : [nextPath];
+      if (!reordered.includes(nextPath)) {
+        reordered.push(nextPath);
+      }
+      updateOrder(reordered);
+    }
+
+    setNameOverrides((prev) => {
+      const next = { ...prev, [newId]: name || prev[newId] || prev[id] };
+      if (newId !== id) {
+        delete next[id];
+      }
+      persistIndicatorNames(next);
+      return next;
+    });
+
+    setSelectedIndicatorId((current) => {
+      if (current === id || current === newId) {
+        const nextSelected = newId;
+        persistSelectedIndicatorId(nextSelected);
+        return nextSelected;
+      }
+      return current;
+    });
+  };
+
   const toggleActiveIndicator = async (id: string) => {
     const current = indicators.find((indicator) => indicator.id === id);
     const nextValue = !current?.isActive;
@@ -444,6 +544,7 @@ export const useIndicators = (data: Candle[]) => {
   return {
     indicators,
     indicatorData,
+    indicatorOverlays,
     indicatorOrder,
     setIndicatorOrder: updateOrder,
     indicatorFolders: folders,
@@ -458,6 +559,7 @@ export const useIndicators = (data: Candle[]) => {
     toggleActiveIndicator,
     toggleVisibility,
     refreshFromDisk,
+    renameIndicator,
     updateIndicatorName,
   };
 };

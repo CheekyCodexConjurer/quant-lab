@@ -334,4 +334,16 @@ Quando estiver em dúvida, siga isso:
 7. Sempre que mexer em arquitetura/comportamento, sincronize docs e diga o que foi atualizado.
 
 Se você respeitar este arquivo + `architecture.md`, o projeto continua coerente – tanto em código quanto em estética – e as LLMs futuras não te xingam quando abrirem esses arquivos.
+## 0. Planejamento robusto e orientado a UX
+
+- Sempre que o usuA�rio pedir um plano ou uma arquitetura, considerar **a melhor soluA�ao possA-vel**, mesmo que envolva vA�rias fases e componentes (frontend, backend, desktop, docs).
+- Prefira planos **profissionais, robustos e seguros**, projetados para evitar problemas futuros (quebras de API, migraA�oes difA-ceis, falta de testes), em vez de soluA�oes rA-pidas ou minimalistas demais.
+- Planeje como se tokens/tempo nao fossem limitaA�ao: pode dividir em quantas fases forem necessA�rias (MVP, hardening, UX refinada, performance, seguranA�a, extensibilidade).
+- Em features estruturais (ex.: engines, sistemas de indicadores/estratA�gias, fluxos tipo TradingView), sempre pensar em:
+  - versionamento de APIs e contratos;
+  - isolamento de ambiente (ex.: Python, dependA�ncias externas);
+  - modelo de cache/performance e execuA�ao incremental quando fizer sentido;
+  - protocolo de erro/logging que ajude o usuA�rio a depurar;
+  - extensibilidade futura (novos tipos de scripts, integraA�ao com Lean, etc.).
+- Mesmo em planos longos, manter a resposta **clara, faseada e navegA�vel** para humanos e LLMs (seAA�es, bullets, referA�ncias a arquivos), priorizando sempre a melhor experiA�ncia do usuA�rio final.
 

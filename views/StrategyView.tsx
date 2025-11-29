@@ -10,6 +10,7 @@ import { LeanSettingsPanel } from '../components/lean/LeanSettingsPanel';
 import { ensureRootedPath, normalizeSlashes, toRelativePath, truncateMiddle } from '../utils/path';
 import { useHoverMenu } from '../components/ui/useHoverMenu';
 import { MenuSurface } from '../components/ui/MenuSurface';
+import { apiClient } from '../services/api/client';
 
 type StrategyViewProps = {
   onRunLeanBacktest: () => void;
@@ -44,6 +45,7 @@ type StrategyViewProps = {
   saveIndicator: (id: string, code: string, name?: string, filePathOverride?: string) => Promise<void> | void;
   toggleActiveIndicator: (id: string) => Promise<void> | void;
   refreshIndicatorFromDisk: (id: string) => Promise<void> | void;
+  renameIndicator: (id: string, nextWorkspacePath: string, name: string) => Promise<void> | void;
   updateIndicatorName: (id: string, name: string) => void;
   indicatorFolders: string[];
   addIndicatorFolder: (folder: string) => void;
@@ -245,6 +247,7 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
   saveIndicator,
   toggleActiveIndicator,
   refreshIndicatorFromDisk,
+  renameIndicator,
   updateIndicatorName,
   indicatorFolders,
   addIndicatorFolder,
@@ -576,8 +579,14 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
     if (path.startsWith(INDICATOR_ROOT)) {
       const indicator = indicators.find((item) => deriveIndicatorPath(item) === path);
       if (!indicator) return;
-      const safeName = nextName.replace(/\.py$/i, '');
-      updateIndicatorName(indicator.id, safeName);
+      const safeName = nextName.replace(/\.py$/i, '').trim();
+      if (!safeName) {
+        setRenamingPath(null);
+        return;
+      }
+      const folder = path.split('/').slice(0, -1).join('/') || INDICATOR_ROOT;
+      const nextPath = `${folder}/${safeName}.py`;
+      renameIndicator(indicator.id, nextPath, safeName);
       setRenamingPath(null);
       return;
     }
@@ -875,6 +884,28 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
                           Copy full path
                         </button>
                         <button
+                          className="w-full text-left px-3 py-1.5 hover:bg-slate-50 transition-colors flex items-center gap-2"
+                          onClick={async () => {
+                            const indicator = indicators.find((item) => deriveIndicatorPath(item) === node.path);
+                            if (!indicator || !indicator.filePath) {
+                              addToast('File path not available.', 'error');
+                              setActionMenuPath(null);
+                              return;
+                            }
+                            try {
+                              await apiClient.openFileFolder(indicator.filePath);
+                            } catch (error) {
+                              console.warn('[indicator] open folder failed', error);
+                              addToast('Failed to open folder.', 'error');
+                            } finally {
+                              setActionMenuPath(null);
+                            }
+                          }}
+                        >
+                          <FileText size={12} />
+                          Open Windows Folder
+                        </button>
+                        <button
                           className="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-600 transition-colors flex items-center gap-2"
                           onClick={() => {
                             const target = indicators.find((item) => deriveIndicatorPath(item) === node.path);
@@ -927,6 +958,28 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
                         >
                           <Copy size={12} />
                           Copy full path
+                        </button>
+                        <button
+                          className="w-full text-left px-3 py-1.5 hover:bg-slate-50 transition-colors flex items-center gap-2"
+                          onClick={async () => {
+                            const strategy = strategies.find((item) => derivePath(item) === node.path);
+                            if (!strategy || !strategy.filePath) {
+                              addToast('File path not available.', 'error');
+                              setActionMenuPath(null);
+                              return;
+                            }
+                            try {
+                              await apiClient.openFileFolder(strategy.filePath);
+                            } catch (error) {
+                              console.warn('[strategy] open folder failed', error);
+                              addToast('Failed to open folder.', 'error');
+                            } finally {
+                              setActionMenuPath(null);
+                            }
+                          }}
+                        >
+                          <FileText size={12} />
+                          Open Windows Folder
                         </button>
                         <button
                           className="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-600 transition-colors flex items-center gap-2"

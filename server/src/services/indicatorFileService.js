@@ -133,11 +133,58 @@ const writeIndicator = (id, code, filePathOverride, active) => {
   if (legacyFullPath !== canonicalFullPath && fs.existsSync(legacyFullPath) && !fs.existsSync(canonicalFullPath)) {
     fs.renameSync(legacyFullPath, canonicalFullPath);
   }
-  fs.writeFileSync(canonicalFullPath, code ?? '', 'utf-8');
-  if (typeof active === 'boolean') {
-    setIndicatorActive(encodeId(relPath), active);
+  let finalCode = code;
+  if (typeof finalCode !== 'string') {
+    const existingPath = fs.existsSync(canonicalFullPath)
+      ? canonicalFullPath
+      : fs.existsSync(legacyFullPath)
+        ? legacyFullPath
+        : null;
+    if (existingPath && fs.existsSync(existingPath)) {
+      finalCode = fs.readFileSync(existingPath, 'utf-8');
+    } else {
+      finalCode = DEFAULT_INDICATOR_CODE;
+    }
   }
-  return readIndicator(encodeId(relPath));
+  fs.writeFileSync(canonicalFullPath, finalCode ?? '', 'utf-8');
+  const encodedId = encodeId(relPath);
+  if (typeof active === 'boolean') {
+    setIndicatorActive(encodedId, active);
+  }
+  return readIndicator(encodedId);
+};
+
+const renameIndicatorFile = (id, filePathOverride) => {
+  ensureDir();
+  const decoded = decodeId(id);
+  const currentPaths = resolveRelPath(decoded);
+  const sourcePath = fs.existsSync(currentPaths.canonicalFullPath)
+    ? currentPaths.canonicalFullPath
+    : fs.existsSync(currentPaths.legacyFullPath)
+      ? currentPaths.legacyFullPath
+      : null;
+  if (!sourcePath) return null;
+  const nextPaths = resolveRelPath(filePathOverride || decoded);
+  ensureDirFor(nextPaths.relPath);
+  const targetPath = nextPaths.canonicalFullPath;
+  if (sourcePath !== targetPath) {
+    const targetDir = path.dirname(targetPath);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    fs.renameSync(sourcePath, targetPath);
+  }
+  const prevId = id;
+  const relForMeta = path.relative(INDICATORS_DIR, targetPath).replace(/\\/g, '/');
+  const nextId = encodeId(relForMeta);
+  const wasActive = getIndicatorActive(prevId);
+  if (wasActive) {
+    setIndicatorActive(nextId, true);
+    if (nextId !== prevId) {
+      removeIndicator(prevId);
+    }
+  }
+  return readIndicator(nextId);
 };
 
 const deleteIndicatorFile = (id) => {
@@ -168,6 +215,7 @@ module.exports = {
   listIndicators,
   readIndicator,
   writeIndicator,
+  renameIndicatorFile,
   deleteIndicatorFile,
   ensureSeed,
 };

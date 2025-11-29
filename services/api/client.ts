@@ -111,6 +111,12 @@ export const apiClient = {
     return res.json();
   },
 
+  async getDatasetCoverage() {
+    const res = await fetch(`${BASE_URL}/api/data/coverage`);
+    if (!res.ok) throw new Error('Failed to load dataset coverage');
+    return res.json();
+  },
+
   async fetchDataText(asset: string, timeframe: string, options: { signal?: AbortSignal } = {}) {
     const res = await fetch(`${BASE_URL}/api/data/${asset}/${timeframe}`, {
       signal: options.signal,
@@ -126,8 +132,15 @@ export const apiClient = {
     return res.json();
   },
 
-  async fetchData(asset: string, timeframe: string) {
-    const res = await fetch(`${BASE_URL}/api/data/${asset}/${timeframe}`);
+  async fetchData(asset: string, timeframe: string, options: { to?: string; limit?: number } = {}) {
+    const params = new URLSearchParams();
+    if (options.to) params.set('to', options.to);
+    if (typeof options.limit === 'number' && options.limit > 0) {
+      params.set('limit', String(Math.floor(options.limit)));
+    }
+    const qs = params.toString() ? `?${params.toString()}` : '';
+
+    const res = await fetch(`${BASE_URL}/api/data/${asset}/${timeframe}${qs}`);
     if (!res.ok) throw new Error('Dataset not available');
     return res.json();
   },
@@ -135,6 +148,31 @@ export const apiClient = {
   async listIndicators() {
     const res = await fetch(`${BASE_URL}/api/indicators`);
     if (!res.ok) throw new Error('Failed to list indicators');
+    return res.json();
+  },
+
+  async runIndicator(
+    id: string,
+    candles: {
+      time: string | number;
+      open: number;
+      high: number;
+      low: number;
+      close: number;
+      volume?: number;
+    }[]
+  ) {
+    const res = await fetch(`${BASE_URL}/api/indicator-exec/${encodeURIComponent(id)}/run`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ candles }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const message =
+        (body && body.error && (body.error.message || body.error)) || 'Failed to run indicator';
+      throw new Error(message);
+    }
     return res.json();
   },
 
@@ -161,6 +199,16 @@ export const apiClient = {
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error('Failed to save indicator');
+    return res.json();
+  },
+
+  async renameIndicator(id: string, payload: { filePath: string }) {
+    const res = await fetch(`${BASE_URL}/api/indicators/${id}/rename`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Failed to rename indicator');
     return res.json();
   },
 
@@ -214,6 +262,29 @@ export const apiClient = {
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error('Failed to save strategy');
+    return res.json();
+  },
+
+  async renameStrategy(id: string, payload: { filePath: string }) {
+    const res = await fetch(`${BASE_URL}/api/strategies/${id}/rename`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Failed to rename strategy');
+    return res.json();
+  },
+
+  async openFileFolder(filePath: string) {
+    const res = await fetch(`${BASE_URL}/api/paths/open`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ filePath }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error || 'Failed to open folder');
+    }
     return res.json();
   },
 

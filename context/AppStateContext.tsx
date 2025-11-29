@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { AVAILABLE_ASSETS, AVAILABLE_TIMEFRAMES } from '../constants/markets';
-import { TIMEZONE_OPTIONS } from '../constants/timezones';
 import { ChartAppearance, ViewState, LicenseState, UserProfile } from '../types';
 
 type AppState = {
@@ -24,6 +23,11 @@ type AppState = {
   setLicense: (next: LicenseState) => void;
   user: UserProfile | null;
   setUser: (user: UserProfile | null) => void;
+  datasetRanges: Record<string, Record<string, { start?: string; end?: string; count?: number }>>;
+  setDatasetRanges: (
+    asset: string,
+    ranges: Record<string, { start?: string; end?: string; count?: number }>
+  ) => void;
 };
 
 const AppStateContext = createContext<AppState | undefined>(undefined);
@@ -151,6 +155,9 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     }
     return null;
   });
+  const [datasetRanges, setDatasetRangesState] = useState<
+    Record<string, Record<string, { start?: string; end?: string; count?: number }>>
+  >({});
 
   useEffect(() => {
     try {
@@ -268,6 +275,26 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     });
   };
 
+  const setDatasetRanges = (
+    asset: string,
+    ranges: Record<string, { start?: string; end?: string; count?: number }>
+  ) => {
+    const normalizedAsset = String(asset || '').toUpperCase();
+    const normalizedRanges: Record<string, { start?: string; end?: string; count?: number }> = {};
+    Object.entries(ranges || {}).forEach(([tf, meta]) => {
+      const key = String(tf || '').toUpperCase();
+      normalizedRanges[key] = {
+        start: meta?.start,
+        end: meta?.end,
+        count: typeof meta?.count === 'number' ? meta.count : undefined,
+      };
+    });
+    setDatasetRangesState((prev) => ({
+      ...prev,
+      [normalizedAsset]: normalizedRanges,
+    }));
+  };
+
   return (
     <AppStateContext.Provider
       value={{
@@ -291,6 +318,8 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
         setLicense,
         user,
         setUser,
+        datasetRanges,
+        setDatasetRanges,
       }}
     >
       {children}

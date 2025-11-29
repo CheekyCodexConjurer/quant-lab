@@ -1,12 +1,12 @@
 # The Lab - Roadmap Unico (Agent-Oriented, Revenue-First)
 
 > Atualizado em **28/11/2025**  
-> Projeto base: **quant-lab** (frontend React/Vite, backend Express, Lean + Dukascopy)
+> Projeto base: **quant-lab** (frontend React/Vite, backend Express, Lean + CL Futures)
 
 Este arquivo eh o **roadmap principal e completo** do The Lab.  
 Ele serve tanto como visao de produto quanto como guia de implementacao para voce e para os agentes.
 
-Toda a arquitetura de referencia esta centralizada em **`architecture.md`** (frontend, backend, fluxos, Lean, Dukascopy).  
+Toda a arquitetura de referencia esta centralizada em **`architecture.md`** (frontend, backend, fluxos, Lean, dados locais de futures).  
 Antes de implementar qualquer coisa, o agente deve ler:
 
 - `architecture.md` - visao consolidada de stack, fluxos e pastas.  
@@ -48,9 +48,9 @@ Por padrao, **todos os textos de UI** (labels, tooltips, botoes, menus, mensagen
 Resumo rapido (detalhes em `architecture.md`):
 
 - Frontend: React + Vite + TypeScript, estado global em `AppStateContext`, views em `views/`, hooks em `hooks/`, UI minimalista (poucos botoes visiveis, muitos menus/contextos discretos, linguagem en-US).  
-- Backend: Express em `server/src/index.js`, rotas em `server/src/routes/`, servicos em `server/src/services/`, dados locais em `server/data/`.  
+- Backend: Express em `server/src/index.js`, rotas em `server/src/routes/`, servicos em `server/src/services/`, dados locais em `server/data/` + `server/db/market.db`.  
 - Lean: integrado via CLI, orquestrado pelo frontend (`useLeanBacktest`).  
-- Dukascopy: importacao via backend (`dukascopyService`), dados segmentados por ano em JSON, listagem via `dataCacheService`.
+- Dados de mercado: CL futures locais (CSV vendor) importados via scripts para `server/data` (JSON segmentado) e ingeridos em SQLite (`server/db/market.db`), servidos em janelas por `/api/data/:asset/:timeframe?limit=&to=`.
 
 ---
 
@@ -132,7 +132,7 @@ Polir o empacotamento desktop para uso diario: atalho unico no Windows, janelas 
 
 ## Fase 1 - Paid Alpha - Desktop Local, Licenca Unica
 
-### 1.1. Multi-instrumento Alpha (CL1!, ES1!, BTC1!)
+### 1.1. Multi-instrumento Alpha (CL1!, ES1!, BTC1!) - Dukascopy (legacy, descontinuado na UI)
 
 - [x] **Status:** concluido.
 
@@ -150,17 +150,12 @@ Permitir ao usuario escolher/importar dados para alguns instrumentos chave via D
   - `server/src/routes/dataRoutes.js`
 - Frontend:
   - `constants/markets.ts`
-  - `hooks/useDataImport.ts`
-  - `hooks/useIncrementalMarketData.ts`
-  - `views/DataSourcesView.tsx` (inclui prompt inline de "Existing data detected" dentro do card Dukascopy, sem overlay full-screen)
+  - `hooks/useIncrementalMarketData.ts` (atualizado: passa a consumir janelas de dados via `limit`/cache, nao mais full-series)
 
-**Resumo do que esta feito**
+**Resumo (estado legacy)**  
 
-- Mapeamento de CL1!, ES1!, BTC1! alinhado entre frontend (`DUKASCOPY_MARKETS`) e backend (`ASSET_SOURCES`).  
-- Importacao Dukascopy resiliente (jobs persistidos, chunking por timeframe, logs claros).  
-- Persistencia segmentada por ano + metadados (`*-meta.json`) para contagem/range por timeframe.  
-- `DataSourcesView` com UI para escolher mercado, simbolo e acionar importacao (modo `continue` / `restart`).  
-- `useIncrementalMarketData` carrega datasets e ingere candles incrementalmente no chart.
+- Dukascopy continua disponivel apenas como backend legacy (jobs, JSONs em `server/data/raw`), mas a UI principal migrou para dados locais de futures CL.  
+- `DataSourcesView` e `useDataImport` foram removidos da navegacao; os datasets sao carregados diretamente de `server/data` via `dataCacheService`.
 
 ---
 
@@ -247,6 +242,300 @@ Permitir um licenciamento **100% local** para Early Access, usado para gating le
    - `useLicense.applyKey` tenta chamar `/api/license/validate` ao aplicar uma chave:
      - se o backend responder, o `mode` retornado eh usado como sugestao (pode ser estendido no futuro para logica mais complexa).
      - se o backend nao responder (erro de rede/offline), o estado de licenca eh baseado apenas na logica local, preservando comportamento offline.
+
+---
+
+## 1.x - Market Data Engine v1 (CL Futures, SQLite & Janela)
+
+- [x] **Status:** concluido.
+
+**Objetivo**  
+Sair do modelo de carregamento full-series em JSON e adotar um engine de dados local baseado em CL Futures, com janelas por timeframe, cache em memoria e pipeline reprodutivel de ingestao, aproximando a responsividade de plataformas como TradingView.
+
+**Arquivos principais**
+
+- Backend:
+  - `server/scripts/importClFuturesFromCsv.js` (CSV -> JSONs segmentados em `server/data`)  
+  - `server/scripts/ingestClFuturesToDb.js` (JSONs segmentados -> `server/db/market.db`)  
+  - `server/src/services/marketStoreSqlite.js` (tabela `bars`, `getWindowFromDb`, `getSummaryFromDb`)  
+  - `server/src/services/marketWindowService.js` (`getWindow`, `getSummary` com fallback para `dataCacheService`)  
+  - `server/src/routes/dataRoutes.js` (`GET /api/data/:asset/:tf?limit=&to=`, `GET /summary`)  
+- Frontend:
+  - `services/api/client.ts` (`fetchData(asset, timeframe, { limit, to })`)  
+  - `hooks/useIncrementalMarketData.ts` (usa `limit`, cacheia por `(asset,timeframe)` e so carrega full uma vez)
+
+**Resumo do que esta feito**
+
+- CL1! e timeframes (M1, M5, M15, M30, H1, H4) sao ingeridos em SQLite via scripts dedicados, mantendo tambem os JSONs segmentados como fonte secundaria.
+- A API de dados passa a servir janelas limitadas (`limit=MAX_CANDLES`) ao inves de series completas, reduzindo bastante o payload e o tempo de parse.
+- O hook `useIncrementalMarketData` consome apenas essas janelas, aplica um limite de ~12k candles e mantem cache por asset/timeframe, tornando trocas de timeframe praticamente instantaneas depois da primeira carga.
+
+---
+
+### 1.4. Indicator Execution Engine (TradingView-style)
+
+- [ ] **Status:** em andamento (Fase 1 - runner + rota /api/indicator-exec implementados).
+
+**Objetivo**  
+Permitir que o usuario escreva **qualquer indicador/estrategia em Python** (seguindo uma API simples), salve em `indicators/` ou `strategies/`, e o The Lab execute esse codigo em cima dos candles e desenhe o resultado no grafico – em um fluxo fluido, similar ao TradingView + PineScript, mas 100% local.
+
+**Visao geral de arquitetura**
+
+- **Storage & editor (ja existente)**
+  - Arquivos Python em `indicators/` e `strategies/` (raiz do projeto).
+  - CRUD de arquivos via `server/src/services/indicatorFileService.js` e rotas `/api/indicators`.
+  - UI de edicao com `PythonEditor` dentro de `StrategyView` / `IndicatorView`.
+
+- **Novo nucleo: Indicator Execution Engine**
+  - Componente backend responsavel por:
+    - carregar o arquivo `.py` de um indicador/estrategia;
+    - executar `calculate(inputs)` com os dados de mercado (arrays NumPy de open/high/low/close/volume, etc.);
+    - devolver um payload JSON estruturado para o frontend, com:
+      - series numericas (para linhas / overlays);
+      - marcadores (setas, simbolos, flags);
+      - niveis horizontais (linhas de suporte/resistencia, Protected High/Low, etc.).
+
+- **Integracao com frontend**
+  - `hooks/useIndicators.ts` passa a solicitar ao backend a execucao dos indicadores ativos, em vez de calcular tudo localmente em TypeScript.
+  - `ChartView` / `LightweightChart` recebem um modelo de overlay mais rico (series, marcadores, niveis) e desenham a estrutura, mantendo o visual minimalista atual.
+
+#### 1.4.1. Contrato de indicador (API Python)
+
+**Arquivos principais**
+
+- Docs:
+  - `views/ApiDocsView.tsx` (secao "Indicator API")
+  - `docs/indicators/indicator-api.md` (a criar, consolidando exemplos e assinatura)
+- Indicadores Python:
+  - `indicators/ema_200.py` (exemplo simples)
+  - `indicators/market-structure.py` (indicador de Estrutura de Mercado, futuro)
+
+**Assinatura minima**
+
+Todo indicador deve expor uma funcao:
+
+```py
+def calculate(inputs):
+    """
+    Main entry point for indicator calculation.
+    :param inputs: dict de np.ndarray com dados de mercado
+    :return: array NumPy OU estrutura dict serializavel em JSON
+    """
+    ...
+```
+
+- `inputs` (primeira versao minima):
+  - `inputs['open']`: `np.ndarray`
+  - `inputs['high']`: `np.ndarray`
+  - `inputs['low']`: `np.ndarray`
+  - `inputs['close']`: `np.ndarray`
+  - `inputs['volume']`: opcional
+- Retorno aceito:
+  - v1: `np.ndarray` (serie principal, mesmo comprimento dos closes ou menor).
+  - v2 (engine avancada): `dict` com campos:
+    - `series`: `{ <name>: np.ndarray, ... }`
+    - `markers`: `[{ "index": int, "kind": str, "value": float | None }, ...]`
+    - `levels`: `[{ "from": int, "to": int, "price": float, "kind": str }, ...]`
+
+**Requisitos de execucao**
+
+- Bibliotecas disponiveis por padrao:
+  - `numpy as np`
+  - `pandas as pd`
+  - `talib`
+  - `math`
+- Execucao sempre em processo separado do backend Node (via `python`), com timeout configuravel e isolamento basico (sem acesso a rede por padrao).
+
+#### 1.4.2. Runner Python e service de execucao (backend)
+
+**Arquivos principais (novos)**
+
+- `server/indicator_runner/runner.py`
+  - Script Python responsavel por:
+    - receber via argumentos o caminho do arquivo de indicador (`indicators/<name>.py`);
+    - ler de `stdin` um JSON com os arrays de OHLC;
+    - carregar dinamicamente o modulo;
+    - executar `calculate(inputs)` com os dados convertidos para `np.ndarray`;
+    - serializar o resultado (array ou dict) em JSON no `stdout`.
+  - Deve tratar:
+    - erros de import ou sintaxe (retornar JSON com `{"error": "SyntaxError", "message": "..."}`).
+    - erros de execucao (stacktrace resumido).
+    - validacao de tamanho maximo de saida.
+
+- `server/src/services/indicatorExecutionService.js`
+  - Funcoes principais:
+    - `runIndicatorById(id, candles, options)`;
+    - `runScript(absolutePath, inputs, options)`.
+  - Responsabilidades:
+    - resolver o caminho correto do arquivo Python via `indicatorFileService` / `INDICATORS_DIR`;
+    - spawn do processo Python (`runner.py`) via `child_process.spawn`;
+    - enviar `inputs` (OHLC) em JSON no `stdin`;
+    - ler e parsear o JSON de retorno;
+    - aplicar politicas de timeout e limites de memoria / tamanho da resposta;
+    - mapear o resultado para um formato interno:
+      - `IndicatorExecutionResult = { series, markers, levels, raw }`.
+
+- `server/src/routes/indicatorExecutionRoutes.js`
+  - Rotas planejadas:
+    - `POST /api/indicator-exec/:id/run`
+      - Body possivel:
+        - v1 (mais simples): `{ candles: [{ time, open, high, low, close, volume? }], context?: {...} }`
+        - v2: `{ asset, timeframe, from?, to?, limit? }` (backend busca candles via `marketWindowService`).
+      - Resposta:
+        ```json
+        {
+          "series": {
+            "main": [{ "time": "...", "value": 123.45 }, ...],
+            "signal": []
+          },
+          "markers": [
+            { "time": "...", "value": 123.45, "kind": "buy" }
+          ],
+          "levels": [
+            { "timeStart": "...", "timeEnd": "...", "price": 130.0, "kind": "protected-high" }
+          ]
+        }
+        ```
+    - `POST /api/indicator-exec/batch`
+      - Opcional: executar varios indicadores de uma vez para a mesma janela de candles.
+
+**Integracao com servicos existentes**
+
+- Usa `INDICATORS_DIR` de `server/src/constants/paths.js` para localizar arquivos.
+- Pode reutilizar `marketWindowService.getWindow` quando receber apenas `(asset, timeframe, from, to)`.
+- Nao interfere nas rotas `/api/indicators` (CRUD de arquivos), apenas adiciona a dimensao "execucao".
+
+#### 1.4.3. Modelo de dados de overlay (frontend)
+
+**Arquivos principais**
+
+- `types.ts`
+  - Novos tipos para modelar overlays:
+    - `IndicatorSeriesPoint = { time: string | number; value: number }`
+    - `IndicatorMarker = { time: string | number; value?: number; kind: string }`
+    - `IndicatorLevel = { timeStart: string | number; timeEnd: string | number; price: number; kind: string }`
+    - `IndicatorOverlay = { series: Record<string, IndicatorSeriesPoint[]>; markers: IndicatorMarker[]; levels: IndicatorLevel[] }`
+
+- `hooks/useIndicators.ts`
+  - Hoje calcula somente EMA em TS, preenchendo `indicatorData: Record<string, { time, value }[]>`.
+  - Passos planejados:
+    1. Introduzir `indicatorOverlays: Record<string, IndicatorOverlay>` no estado do hook.
+    2. Substituir a logica de `calculateEMA` por chamadas a `apiClient.runIndicator(id, candles)`:
+       - Para cada indicador ativo:
+         - Enviar a janela de candles atual.
+         - Receber `series`, `markers`, `levels` do backend.
+         - Preencher:
+           - `indicatorData[id] = series['main'] ?? alguma serie default`;
+           - `indicatorOverlays[id] = { series, markers, levels }`.
+    3. Expor `indicatorOverlays` para `ChartView`.
+
+- `services/api/client.ts`
+  - Adicionar:
+    - `runIndicator(id: string, payload: RunIndicatorPayload): Promise<IndicatorOverlayResponse>`.
+  - Manter consistencia de base URL (`/api/indicator-exec/...`).
+
+**Integracao com o chart**
+
+- `views/ChartView.tsx`
+  - Hoje:
+    - monta `lines` para o `<LightweightChart />` usando apenas `indicatorData`.
+  - Planejado:
+    - continuar usando `indicatorData` para a serie principal (compatibilidade).
+    - passar `indicatorOverlays` (agregado/transformado) como prop `structure` ou similar:
+      - `structure.lines` → series adicionais (signal, baseline, niveis etc.).
+      - `structure.markers` → setas de compra/venda, swings, etc.
+      - `structure.levels` → linhas horizontais de suporte/resistencia, Protected High/Low.
+
+- `components/LightweightChart.tsx`
+  - Novos props (sem quebrar API atual):
+    - `structureLines?: { id: string; data: IndicatorSeriesPoint[]; color?: string; style?: 'solid' | 'dashed' }[]`
+    - `structureMarkers?: IndicatorMarker[]`
+    - `structureLevels?: IndicatorLevel[]`
+  - Implementacao:
+    - Para `structureLines`: criar `LineSeries` adicionais com cores e estilos discretos (tracejado para niveis, continuo para sinais).
+    - Para `structureMarkers`: reusar `setMarkers` da serie de candles, mapeando `kind` para formas/cores.
+    - Para `structureLevels`: desenhar series horizontais (dois pontos com mesmo `price` entre `timeStart` e `timeEnd`) com estilo tracejado.
+
+#### 1.4.4. UX estilo TradingView (edicao e testes)
+
+**Objetivo**  
+Deixar o fluxo de uso natural para o usuario: ler a API, escrever o script, salvar, aplicar no grafico e ver o resultado rapidamente.
+
+**Arquivos principais**
+
+- `views/StrategyView.tsx`
+- `views/IndicatorView.tsx`
+- `components/editor/PythonEditor.tsx`
+- `views/ApiDocsView.tsx`
+
+**Fluxo de usuario planejado**
+
+1. **Descobrir a API**
+   - Em `ApiDocsView`, adicionar uma subseçao "Indicator Execution Engine":
+     - link para `docs/indicators/indicator-api.md`;
+     - exemplos de `calculate(inputs)` que retornam:
+       - apenas uma serie;
+       - serie + markers;
+       - serie + niveis.
+
+2. **Criar / editar indicador**
+   - Em `IndicatorView`:
+     - criar indicador (botao "New Indicator" ja existe).
+     - editar o Python no `PythonEditor`.
+
+3. **Salvar e aplicar**
+   - Botao "Save & Apply":
+     - salva o arquivo via `/api/indicators/:id`;
+     - marca o indicador como ativo (`/api/indicators/:id/active`);
+     - dispara uma execucao via `/api/indicator-exec/:id/run` para a janela de candles atual.
+
+4. **Testar sem aplicar**
+   - Botao "Run test (preview)":
+     - chama `runIndicator` com uma janela limitada (ex.: ultimos N candles);
+     - mostra um preview em uma area reduzida ou log textual, sem mexer no grafico principal.
+
+5. **Feedback de erros**
+   - Exibir:
+     - erros de sintaxe Python (linha/coluna, mensagem).
+     - erros de execucao (stacktrace resumido).
+     - avisos de timeout ou limite de memoria.
+
+**Regras de UX**
+
+- Manter a UI minimalista: nada de paineis gigantes extras.
+- Painel de indicadores ativos no grafico continua pequeno e discreto (ja existente em `ChartView`).
+- Logs de execucao / erros aparecem em painel colapsavel ou area do editor, nao sobrepostos ao grafico.
+
+#### 1.4.5. Performance, isolamento e extensibilidade
+
+**Performance e caching**
+
+- Introduzir cache de resultados por chave:
+  - `(indicatorId, asset, timeframe, codeHash, lastCandleTime)` → `IndicatorExecutionResult`.
+- Evitar reexecucao completa quando:
+  - apenas alguns candles novos foram adicionados (no futuro: execucao incremental).
+- Permitir execucao em lote para multiplos indicadores sobre a mesma janela de dados (rota `/api/indicator-exec/batch`).
+
+**Isolamento e seguranca**
+
+- Sempre rodar codigo de usuario em processo Python separado com:
+  - timeout (ex.: 2–5 segundos configuraveis).
+  - sem acesso a rede por padrao (nao importar requests/httpx etc. automaticamente).
+  - limite de tamanho de saida (para evitar arrays gigantes).
+- Logar eventos relevantes para debug local:
+  - tempo de execucao.
+  - erros de import/execucao.
+  - scripts que ultrapassam limite de tempo.
+
+**Extensibilidade**
+
+- Engine deve ser generica o suficiente para:
+  - suportar, no futuro, estrategias (nao apenas indicadores) com retorno mais complexo (ordens simuladas, sinais, etc.).
+  - ser reutilizada pelo fluxo de Lean (por exemplo, exportar resultados de estrategias para o The Lab em formato de overlay).
+- Toda a logica especifica fica concentrada em:
+  - `indicator_runner/runner.py` (lado Python).
+  - `indicatorExecutionService` + `indicatorExecutionRoutes` (lado Node).
+  - `useIndicators` + `ChartView` + `LightweightChart` (lado frontend).
 
 ---
 

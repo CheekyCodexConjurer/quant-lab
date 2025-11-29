@@ -10,6 +10,8 @@ const indicatorRoutes = require('./routes/indicatorRoutes');
 const strategyRoutes = require('./routes/strategyRoutes');
 const leanRoutes = require('./routes/leanRoutes');
 const licenseRoutes = require('./routes/licenseRoutes');
+const pathsRoutes = require('./routes/pathsRoutes');
+const indicatorExecutionRoutes = require('./routes/indicatorExecutionRoutes');
 
 const PORT = process.env.SERVER_PORT || 4800;
 
@@ -31,9 +33,11 @@ app.use('/api/import', importRoutes);
 app.use('/api/normalization', normalizationRoutes);
 app.use('/api/data', dataRoutes);
 app.use('/api/indicators', indicatorRoutes);
+app.use('/api/indicator-exec', indicatorExecutionRoutes);
 app.use('/api/strategies', strategyRoutes);
 app.use('/api/lean', leanRoutes);
 app.use('/api/license', licenseRoutes);
+app.use('/api/paths', pathsRoutes);
 
 const distPath = path.resolve(__dirname, '..', '..', 'dist');
 

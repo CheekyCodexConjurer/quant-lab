@@ -3,14 +3,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AppStateProvider, useAppState } from './context/AppStateContext';
 import { Sidebar } from './components/layout/Sidebar';
 import { MainHeader } from './components/layout/MainHeader';
-import { useIncrementalMarketData } from './hooks/useIncrementalMarketData';
+import { useIncrementalMarketData, prefetchMarketWindow } from './hooks/useIncrementalMarketData';
 import { useIndicators } from './hooks/useIndicators';
 import { useBacktest } from './hooks/useBacktest';
-import { useDataImport } from './hooks/useDataImport';
 import { useNormalizationSettings } from './hooks/useNormalizationSettings';
 import { AVAILABLE_TIMEFRAMES } from './constants/markets';
 import { ChartView } from './views/ChartView';
-import { DataSourcesView } from './views/DataSourcesView';
 import { DataNormalizationView } from './views/DataNormalizationView';
 import { StrategyView } from './views/StrategyView';
 import { AnalysisView } from './views/AnalysisView';
@@ -25,6 +23,40 @@ import { ToastProvider } from './components/common/Toast';
 import { useToast } from './components/common/Toast';
 import { useAvailableFrames } from './hooks/useAvailableFrames';
 import { useLeanBacktest } from './hooks/useLeanBacktest';
+
+const TIMEFRAME_ORDER = [
+  'S1',
+  'S5',
+  'S10',
+  'S30',
+  'M1',
+  'M2',
+  'M5',
+  'M10',
+  'M15',
+  'M30',
+  'M45',
+  'H1',
+  'H2',
+  'H3',
+  'H4',
+  'H8',
+  'H12',
+  'D1',
+  'D7',
+  'D30',
+  'D90',
+  'D180',
+  'D365',
+];
+
+const timeframeWeight = (code: string) => {
+  const upper = String(code || '').toUpperCase();
+  const idx = TIMEFRAME_ORDER.indexOf(upper);
+  if (idx !== -1) return idx;
+  // Unknown timeframes go to the end, ordered lexicograficamente.
+  return TIMEFRAME_ORDER.length + upper.charCodeAt(0);
+};
 
 const AppContent: React.FC = () => {
   const {
@@ -45,6 +77,7 @@ const AppContent: React.FC = () => {
     chartAppearance,
     setChartAppearance,
     license,
+    setDatasetRanges,
   } = useAppState();
   const marketData = useIncrementalMarketData();
   const {
@@ -64,48 +97,38 @@ const AppContent: React.FC = () => {
     setExternalResult(result);
     setActiveView(ViewState.ANALYSIS);
   });
-  const [importSymbol, setImportSymbol] = useState(activeSymbol);
-  const [importTimeframe, setImportTimeframe] = useState(activeTimeframe);
-  const [selectedMarket, setSelectedMarket] = useState('Energy Commodities');
-  const [startDate, setStartDate] = useState('Oldest Data Available');
-  const [endDate, setEndDate] = useState('Present');
-  const dataImport = useDataImport(importSymbol, importTimeframe);
   const addToast = useToast();
-  const repoStatus =
-    dataImport.status === 'running'
-      ? 'syncing'
-      : dataImport.status === 'completed'
-        ? 'synced'
-        : dataImport.status === 'error'
-          ? 'error'
-          : dataImport.status === 'canceled'
-            ? 'disconnected'
-            : 'disconnected';
-
-  useEffect(() => {
-    if (dataImport.status === 'running') return;
-    if (activeView !== ViewState.DATA) return;
-    setImportSymbol(activeSymbol);
-    setImportTimeframe(activeTimeframe);
-  }, [activeSymbol, activeTimeframe, activeView, dataImport.status]);
+  const repoStatus: 'disconnected' | 'syncing' | 'synced' | 'error' = 'synced';
 
   useEffect(() => {
     let cancelled = false;
     const loadTimeframes = async () => {
       try {
-        const datasets = await apiClient.listDatasets();
+        const coverage = await apiClient.getDatasetCoverage();
         if (cancelled) return;
-        const normalizedDatasets = (datasets || []).map((dataset: { asset: string; timeframes?: string[] }) => ({
-          asset: String(dataset.asset || '').toUpperCase(),
-          timeframes: Array.isArray(dataset.timeframes)
-            ? Array.from(new Set(dataset.timeframes.map((tf) => String(tf).toUpperCase())))
-            : [],
-        }));
+        const assets = Array.isArray((coverage as any)?.assets) ? (coverage as any).assets : coverage || [];
+        const normalizedDatasets = (assets || []).map(
+          (entry: {
+            asset: string;
+            timeframes?: string[];
+            ranges?: Record<string, { start?: string; end?: string; count?: number }>;
+          }) => {
+            const asset = String(entry.asset || '').toUpperCase();
+            const timeframes = Array.isArray(entry.timeframes)
+              ? Array.from(new Set(entry.timeframes.map((tf) => String(tf).toUpperCase())))
+              : [];
+            const ranges = entry.ranges || {};
+            return { asset, timeframes, ranges };
+          }
+        );
         const normalizedAssets = normalizedDatasets.filter((item) => item.asset).map((item) => item.asset);
         setDownloadedAssets(normalizedAssets);
         normalizedDatasets.forEach((dataset) => {
           if (dataset.asset && dataset.timeframes.length) {
             setAvailableTimeframes(dataset.asset, dataset.timeframes);
+          }
+          if (dataset.asset && dataset.ranges) {
+            setDatasetRanges(dataset.asset, dataset.ranges);
           }
         });
       } catch (error) {
@@ -116,7 +139,7 @@ const AppContent: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [dataImport.status, setAvailableTimeframes, setDownloadedAssets]);
+  }, [setAvailableTimeframes, setDownloadedAssets, setDatasetRanges]);
 
   const backendFrames = availableFrames.frames || [];
   const symbolTimeframes =
@@ -126,24 +149,22 @@ const AppContent: React.FC = () => {
         ? backendFrames
         : AVAILABLE_TIMEFRAMES) || AVAILABLE_TIMEFRAMES;
 
-  const pinnedTimeframes = selectedTimeframes.filter((tf) => symbolTimeframes.includes(tf));
-  const chartTimeframes = (pinnedTimeframes.length ? pinnedTimeframes : symbolTimeframes).slice();
-  chartTimeframes.sort((a, b) => {
-    const order = symbolTimeframes;
-    const ai = order.indexOf(a);
-    const bi = order.indexOf(b);
-    if (ai === -1 && bi === -1) return a.localeCompare(b);
-    if (ai === -1) return 1;
-    if (bi === -1) return -1;
-    return ai - bi;
-  });
+  const sortedSymbolTimeframes = [...symbolTimeframes].sort(
+    (a, b) => timeframeWeight(a) - timeframeWeight(b)
+  );
+
+  const pinnedTimeframes = selectedTimeframes.filter((tf) =>
+    sortedSymbolTimeframes.includes(tf)
+  );
+  const chartTimeframes = (pinnedTimeframes.length ? pinnedTimeframes : sortedSymbolTimeframes).slice();
+  chartTimeframes.sort((a, b) => timeframeWeight(a) - timeframeWeight(b));
 
   useEffect(() => {
-    if (!symbolTimeframes.includes(activeTimeframe)) {
-      const fallback = symbolTimeframes[0] ?? AVAILABLE_TIMEFRAMES[0];
+    if (!sortedSymbolTimeframes.includes(activeTimeframe)) {
+      const fallback = sortedSymbolTimeframes[0] ?? AVAILABLE_TIMEFRAMES[0];
       setActiveTimeframe(fallback);
     }
-  }, [symbolTimeframes, activeTimeframe, setActiveTimeframe]);
+  }, [sortedSymbolTimeframes, activeTimeframe, setActiveTimeframe]);
 
   // Sync normalization timezone with chart timezone
   useEffect(() => {
@@ -154,6 +175,18 @@ const AppContent: React.FC = () => {
     loadData({ asset: activeSymbol, timeframe: activeTimeframe });
     return () => cancelCurrentLoad();
   }, [activeSymbol, activeTimeframe, loadData, cancelCurrentLoad]);
+
+  useEffect(() => {
+    const symbol = String(activeSymbol || '').toUpperCase();
+    if (!symbol) return;
+
+    const coreFrames = ['M1', 'M5', 'M15', 'H1', 'H4', 'D1'];
+    coreFrames
+      .filter((tf) => tf !== activeTimeframe.toUpperCase())
+      .forEach((tf) => {
+        void prefetchMarketWindow(symbol, tf);
+      });
+  }, [activeSymbol, activeTimeframe]);
 
   const handleRunBacktest = () => {
     runSimulation(candles);
@@ -178,30 +211,6 @@ const AppContent: React.FC = () => {
     } catch (error) {
       addToast('Failed to start Lean backtest.', 'error');
       console.warn('[lean] start failed', error);
-    }
-  };
-
-  const handleDukascopyImport = async (
-    range: { startDate?: string; endDate?: string; fullHistory?: boolean; mode?: 'continue' | 'restart' } = {}
-  ) => {
-    try {
-      await dataImport.importDukascopy(range, range.mode || 'restart');
-      await loadData({ asset: activeSymbol, timeframe: activeTimeframe });
-      addToast('Import started. Check logs for progress.', 'info');
-    } catch (error) {
-      addToast('Failed to start Dukascopy import.', 'error');
-      console.warn('[import] dukascopy failed', error);
-    }
-  };
-
-  const handleCustomImport = async () => {
-    try {
-      await dataImport.importCustom('user_data_import.csv');
-      await loadData({ asset: activeSymbol, timeframe: activeTimeframe });
-      addToast('Custom import triggered. Check logs for progress.', 'info');
-    } catch (error) {
-      addToast('Failed to start custom import.', 'error');
-      console.warn('[import] custom failed', error);
     }
   };
 
@@ -230,7 +239,7 @@ const AppContent: React.FC = () => {
             onToggleIndicator={indicators.toggleActiveIndicator}
             onToggleVisibility={indicators.toggleVisibility}
             timeframes={chartTimeframes}
-            allTimeframes={symbolTimeframes}
+            allTimeframes={sortedSymbolTimeframes}
             pinnedTimeframes={selectedTimeframes}
             onPinnedChange={setSelectedTimeframes}
             chartTimezone={chartTimezone}
@@ -241,32 +250,6 @@ const AppContent: React.FC = () => {
             ingesting={marketIngesting}
             error={marketError}
             onCancelLoad={cancelCurrentLoad}
-          />
-        );
-      case ViewState.DATA:
-        return (
-          <DataSourcesView
-            selectedMarket={selectedMarket}
-            setSelectedMarket={setSelectedMarket}
-            startDate={startDate}
-            setStartDate={setStartDate}
-            endDate={endDate}
-            setEndDate={setEndDate}
-            importStatus={dataImport.status}
-            onDukascopyImport={handleDukascopyImport}
-            onCustomImport={handleCustomImport}
-            onCheckExisting={dataImport.checkExisting}
-            onClearLogs={dataImport.clearLogs}
-            onCancelImport={dataImport.cancel}
-            logs={dataImport.logs}
-            progress={dataImport.progress}
-            lastUpdated={dataImport.lastUpdated}
-            frameStatus={dataImport.frameStatus}
-            existingInfo={dataImport.existingPreview || undefined}
-            hasExisting={dataImport.hasExisting}
-            activeSymbol={importSymbol}
-            onSymbolChange={setImportSymbol}
-            activeTimeframe={importTimeframe}
           />
         );
       case ViewState.DATA_NORMALIZATION:
@@ -284,6 +267,8 @@ const AppContent: React.FC = () => {
             setGapQuantEnabled={normalization.setGapQuantEnabled}
             onSave={normalization.persistSettings}
             isSaving={normalization.isSaving}
+            activeSymbol={activeSymbol}
+            onChangeSymbol={setActiveSymbol}
           />
         );
       case ViewState.STRATEGY:
@@ -324,6 +309,7 @@ const AppContent: React.FC = () => {
             saveIndicator={indicators.saveIndicator}
             toggleActiveIndicator={indicators.toggleActiveIndicator}
             refreshIndicatorFromDisk={indicators.refreshFromDisk}
+            renameIndicator={indicators.renameIndicator}
             updateIndicatorName={indicators.updateIndicatorName}
           />
         );
