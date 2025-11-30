@@ -49,11 +49,13 @@ export const toTimestampSeconds = (value: string | number, tz?: string) => {
 
 export const deriveMinBarSpacing = (timeframe?: string) => {
   const minutes = timeframeToMinutes(timeframe);
-  if (minutes <= 1 / 60) return 1;
-  if (minutes <= 1) return 2.5;
-  if (minutes <= 5) return 3.5;
-  if (minutes <= 15) return 4.5;
-  return 6;
+  // Valores bem menores para permitir zoom-out muito mais profundo
+  // com a rodinha do mouse, independente do timeframe.
+  if (minutes <= 1 / 60) return 0.2;
+  if (minutes <= 1) return 0.3;
+  if (minutes <= 5) return 0.4;
+  if (minutes <= 15) return 0.5;
+  return 0.6;
 };
 
 const dayFormatter = new Intl.DateTimeFormat('en-GB', {

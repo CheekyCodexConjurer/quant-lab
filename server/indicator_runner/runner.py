@@ -1,10 +1,11 @@
 import json
+import math
 import os
 import sys
 import time
 import traceback
 from typing import Any, Dict
-import math
+import inspect
 
 
 def _print_json(payload: Dict[str, Any]) -> None:
@@ -220,6 +221,14 @@ def main() -> None:
     )
     return
 
+  # Optional settings dict forwarded by the frontend.
+  raw_settings = payload.get("settings") if isinstance(payload, dict) else None
+  settings: Dict[str, Any]
+  if isinstance(raw_settings, dict):
+    settings = raw_settings
+  else:
+    settings = {}
+
   # Load indicator module
   try:
     module = _load_indicator_module(script_path)
@@ -260,7 +269,16 @@ def main() -> None:
   # Execute user code
   try:
     exec_start = time.time()
-    result = calculate(inputs)
+    try:
+      sig = inspect.signature(calculate)
+      param_count = len(sig.parameters)
+    except Exception:
+      param_count = getattr(getattr(calculate, "__code__", None), "co_argcount", 1)
+
+    if param_count >= 2:
+      result = calculate(inputs, settings)
+    else:
+      result = calculate(inputs)
     exec_ms = (time.time() - exec_start) * 1000.0
   except Exception as exc:
     location = _extract_location(exc, script_path)

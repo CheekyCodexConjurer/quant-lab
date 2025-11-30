@@ -2,6 +2,7 @@ const APPLIED_VERSIONS_KEY = 'thelab.indicators.appliedVersions';
 const SELECTED_ID_KEY = 'thelab.indicators.selectedId';
 const NAMES_KEY = 'thelab.indicators.names';
 const ORDER_KEY = 'thelab.indicators.order';
+const SETTINGS_KEY = 'thelab.indicators.settings.v1';
 
 const safeReadJson = <T,>(key: string, fallback: T): T => {
   if (typeof window === 'undefined') return fallback;
@@ -46,3 +47,7 @@ export const persistIndicatorNames = (names: Record<string, string>) =>
 
 export const loadIndicatorOrder = () => safeReadJson<string[]>(ORDER_KEY, []);
 export const persistIndicatorOrder = (order: string[]) => safeWrite(ORDER_KEY, JSON.stringify(order));
+
+export const loadIndicatorSettings = () => safeReadJson<Record<string, any>>(SETTINGS_KEY, {});
+export const persistIndicatorSettings = (settings: Record<string, any>) =>
+  safeWrite(SETTINGS_KEY, JSON.stringify(settings));

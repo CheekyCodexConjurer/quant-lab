@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Candle, CustomIndicator, IndicatorOverlay, StrategyLabError } from '../types';
+import { Candle, CustomIndicator, IndicatorOverlay, IndicatorSettingsValues, StrategyLabError } from '../types';
 import { calculateEMA, NEW_INDICATOR_TEMPLATE, DEFAULT_INDICATOR_CODE } from '../utils/indicators';
 import { apiClient } from '../services/api/client';
 import {
@@ -11,11 +11,16 @@ import {
   persistIndicatorNames,
   persistIndicatorOrder,
   persistSelectedIndicatorId,
+  loadIndicatorSettings,
+  persistIndicatorSettings,
 } from '../utils/storage/indicatorStorage';
-import { ensureRootedPath, normalizeSlashes, toRelativePath } from '../utils/path';
-
-const INDICATOR_ROOT = 'indicators';
-const FOLDERS_KEY = 'thelab.indicatorFolders';
+import { normalizeSlashes } from '../utils/path';
+import {
+  INDICATOR_ROOT,
+  INDICATOR_FOLDERS_KEY,
+  normalizeIndicatorFolder,
+  toIndicatorRelativePath,
+} from '../utils/indicators/indicatorPaths';
 const MAX_INDICATOR_CANDLES = 1000;
 const INDICATOR_DEBOUNCE_MS = 250;
 
@@ -45,19 +50,6 @@ const seedIndicator = (): CustomIndicator => {
   };
 };
 
-const toIndicatorRelativePath = (filePath?: string | null) => {
-  if (!filePath) return undefined;
-  const normalized = ensureRootedPath(INDICATOR_ROOT, filePath);
-  const rel = toRelativePath(INDICATOR_ROOT, normalized);
-  return rel ? `${INDICATOR_ROOT}/${rel}` : INDICATOR_ROOT;
-};
-
-const normalizeFolder = (folderPath?: string) => {
-  const normalized = normalizeSlashes(folderPath || INDICATOR_ROOT);
-  if (!normalized) return INDICATOR_ROOT;
-  return normalized.toLowerCase().startsWith(INDICATOR_ROOT) ? normalized : `${INDICATOR_ROOT}/${normalized}`;
-};
-
 export const useIndicators = (data: Candle[]) => {
   const [indicators, setIndicators] = useState<CustomIndicator[]>([]);
   const [selectedIndicatorId, setSelectedIndicatorIdState] = useState<string | null>(loadSelectedIndicatorId);
@@ -68,10 +60,11 @@ export const useIndicators = (data: Candle[]) => {
   const [appliedVersions, setAppliedVersions] = useState<Record<string, number>>(loadAppliedVersions);
   const [nameOverrides, setNameOverrides] = useState<Record<string, string>>(loadIndicatorNames);
   const [indicatorOrder, setIndicatorOrder] = useState<string[]>(loadIndicatorOrder);
+  const [indicatorSettings, setIndicatorSettings] = useState<Record<string, IndicatorSettingsValues>>(loadIndicatorSettings);
   const [folders, setFolders] = useState<string[]>(() => {
     if (typeof window === 'undefined') return [];
     try {
-      const stored = window.localStorage.getItem(FOLDERS_KEY);
+      const stored = window.localStorage.getItem(INDICATOR_FOLDERS_KEY);
       const parsed = stored ? JSON.parse(stored) : [];
       if (Array.isArray(parsed)) return parsed.map((f) => normalizeSlashes(f)).filter(Boolean);
     } catch {
@@ -82,6 +75,7 @@ export const useIndicators = (data: Candle[]) => {
   const executionCacheRef = useRef<Record<string, CachedIndicatorResult>>({});
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runTokenRef = useRef(0);
+  const [refreshEpochs, setRefreshEpochs] = useState<Record<string, number>>({});
 
   const setSelectedIndicatorId = (id: string | null) => {
     setSelectedIndicatorIdState(id);
@@ -91,6 +85,24 @@ export const useIndicators = (data: Candle[]) => {
   const updateOrder = (next: string[]) => {
     setIndicatorOrder(next);
     persistIndicatorOrder(next);
+  };
+
+  const updateIndicatorSettings = (id: string, values: IndicatorSettingsValues) => {
+    setIndicatorSettings((prev) => {
+      const next = { ...prev, [id]: values };
+      persistIndicatorSettings(next);
+      return next;
+    });
+  };
+
+  const resetIndicatorSettings = (id: string) => {
+    setIndicatorSettings((prev) => {
+      if (!prev[id]) return prev;
+      const next = { ...prev };
+      delete next[id];
+      persistIndicatorSettings(next);
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -240,11 +252,16 @@ export const useIndicators = (data: Candle[]) => {
       await Promise.all(
         activeIndicators.map(async (indicator) => {
           const versionKey = indicator.appliedVersion || indicator.updatedAt || indicator.lastModified || 0;
-          const cacheKey = `${indicator.id}|${versionKey}|${baseKey}`;
-            const cached = cache[cacheKey];
-            if (cached) {
-              series[indicator.id] = cached.series;
-              overlays[indicator.id] = cached.overlay;
+          const refreshEpoch = refreshEpochs[indicator.id] || 0;
+          const settingsForIndicator = indicatorSettings[indicator.id] || {};
+          const settingsKey = settingsForIndicator && Object.keys(settingsForIndicator).length
+            ? JSON.stringify(settingsForIndicator)
+            : 'default';
+          const cacheKey = `${indicator.id}|${versionKey}|${refreshEpoch}|${baseKey}|${settingsKey}`;
+          const cached = cache[cacheKey];
+          if (cached) {
+            series[indicator.id] = cached.series;
+            overlays[indicator.id] = cached.overlay;
               errors[indicator.id] = cached.error;
               details[indicator.id] = cached.error
                 ? {
@@ -258,7 +275,7 @@ export const useIndicators = (data: Candle[]) => {
             }
 
           try {
-            const response = await apiClient.runIndicator(indicator.id, windowCandles);
+            const response = await apiClient.runIndicator(indicator.id, windowCandles, settingsForIndicator);
             const line = Array.isArray(response.series) ? response.series : [];
             const overlay: IndicatorOverlay = {
               series: (response.overlay && response.overlay.series) || { main: line },
@@ -328,19 +345,19 @@ export const useIndicators = (data: Candle[]) => {
         debounceRef.current = null;
       }
     };
-  }, [data, indicators]);
+  }, [data, indicators, indicatorSettings, refreshEpochs]);
 
   const createIndicator = (folderPath?: string) => {
     const now = Date.now();
     const baseName = 'New_Indicator';
     const id = `${baseName}_${now}`;
-    const normalizedFolder = normalizeFolder(folderPath);
+    const normalizedFolder = normalizeIndicatorFolder(folderPath);
     const filePath = `${normalizedFolder}/${baseName}.py`;
     const nextFolders = Array.from(new Set([...folders, normalizedFolder]));
     setFolders(nextFolders);
     if (typeof window !== 'undefined') {
       try {
-        window.localStorage.setItem(FOLDERS_KEY, JSON.stringify(nextFolders));
+        window.localStorage.setItem(INDICATOR_FOLDERS_KEY, JSON.stringify(nextFolders));
       } catch {
         /* ignore */
       }
@@ -374,11 +391,11 @@ export const useIndicators = (data: Candle[]) => {
   };
 
   const addIndicatorFolder = (folderPath: string) => {
-    const normalized = normalizeFolder(folderPath);
+    const normalized = normalizeIndicatorFolder(folderPath);
     setFolders((prev) => {
       const next = Array.from(new Set([...prev, normalized]));
       try {
-        window.localStorage.setItem(FOLDERS_KEY, JSON.stringify(next));
+        window.localStorage.setItem(INDICATOR_FOLDERS_KEY, JSON.stringify(next));
       } catch {
         /* ignore */
       }
@@ -387,11 +404,11 @@ export const useIndicators = (data: Candle[]) => {
   };
 
   const removeIndicatorFolder = (folderPath: string) => {
-    const normalized = normalizeFolder(folderPath);
+    const normalized = normalizeIndicatorFolder(folderPath);
     setFolders((prev) => {
       const next = prev.filter((f) => normalizeSlashes(f) !== normalizeSlashes(normalized));
       try {
-        window.localStorage.setItem(FOLDERS_KEY, JSON.stringify(next));
+        window.localStorage.setItem(INDICATOR_FOLDERS_KEY, JSON.stringify(next));
       } catch {
         /* ignore */
       }
@@ -606,6 +623,19 @@ export const useIndicators = (data: Candle[]) => {
         persistAppliedVersions(updated);
         return updated;
       });
+      // Invalida cache de execucao para este indicador, garantindo que
+      // o proximo ciclo apos o refresh reavalie o codigo atualizado,
+      // independentemente de heuristicas de versao ou timestamp.
+      setRefreshEpochs((prev) => ({
+        ...prev,
+        [id]: (prev[id] || 0) + 1,
+      }));
+      const cache = executionCacheRef.current;
+      Object.keys(cache).forEach((key) => {
+        if (key.startsWith(`${id}|`)) {
+          delete cache[key];
+        }
+      });
       setIndicators((prev) =>
         prev.map((indicator) =>
           indicator.id === id
@@ -655,5 +685,8 @@ export const useIndicators = (data: Candle[]) => {
     updateIndicatorName,
     indicatorErrors,
     indicatorErrorDetails,
+    indicatorSettings,
+    updateIndicatorSettings,
+    resetIndicatorSettings,
   };
 };

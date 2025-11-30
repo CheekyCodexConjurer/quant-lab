@@ -13,7 +13,7 @@ def calculate(inputs):
     n = close.size
     if n < 3:
         return {
-            "series": {"main": close},
+            "series": {},
             "markers": [],
             "levels": [],
         }
@@ -24,10 +24,7 @@ def calculate(inputs):
     levels, markers = enrich_with_structure(structural_swings, levels, markers, open_, high, low, close, break_map)
 
     return {
-        "series": {
-            "main": close,
-        },
+        "series": {},
         "markers": markers,
         "levels": levels,
     }
-

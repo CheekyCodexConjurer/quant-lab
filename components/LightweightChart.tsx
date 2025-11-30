@@ -28,6 +28,8 @@ interface ChartProps {
 export type LightweightChartHandle = {
   resetView: () => void;
   focusTime: (time: string | number) => void;
+  getVisibleRange: () => { from: number; to: number } | null;
+  setVisibleRange: (range: { from: number; to: number } | null) => void;
 };
 
 type CandlePoint = {
@@ -83,11 +85,36 @@ export const LightweightChart = forwardRef<LightweightChartHandle, ChartProps>(
     }
   };
 
+  const getVisibleRange = () => {
+    if (!chartRef.current) return null;
+    const range = chartRef.current.timeScale().getVisibleRange();
+    if (!range || typeof range.from !== 'number' || typeof range.to !== 'number') return null;
+    return {
+      from: range.from as number,
+      to: range.to as number,
+    };
+  };
+
+  const setVisibleRange = (range: { from: number; to: number } | null) => {
+    if (!chartRef.current || !range) return;
+    const timeScale = chartRef.current.timeScale();
+    try {
+      timeScale.setVisibleRange({
+        from: range.from as UTCTimestamp,
+        to: range.to as UTCTimestamp,
+      });
+    } catch {
+      /* ignore */
+    }
+  };
+
   useImperativeHandle(
     ref,
     () => ({
       resetView,
       focusTime,
+      getVisibleRange,
+      setVisibleRange,
     }),
     []
   );
@@ -235,7 +262,6 @@ export const LightweightChart = forwardRef<LightweightChartHandle, ChartProps>(
       })
       .filter(Boolean) as CandlePoint[];
     candleSeriesRef.current.setData(normalizedData);
-    resetView();
   }, [data]);
 
   // Update line series when they change

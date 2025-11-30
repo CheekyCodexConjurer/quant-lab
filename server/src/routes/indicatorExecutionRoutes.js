@@ -6,7 +6,7 @@ const router = express.Router();
 
 router.post('/:id/run', async (req, res) => {
   try {
-    const { candles } = req.body || {};
+    const { candles, settings } = req.body || {};
     if (!Array.isArray(candles) || candles.length === 0) {
       return res.status(400).json({ error: { type: 'InputError', message: 'candles array is required' } });
     }
@@ -15,7 +15,7 @@ router.post('/:id/run', async (req, res) => {
       id: req.params.id,
       candles: candles.length,
     });
-    const result = await runIndicatorById(req.params.id, candles);
+    const result = await runIndicatorById(req.params.id, candles, { settings });
     if (!result.ok) {
       const error = result.error || { type: 'IndicatorError', message: 'indicator execution failed' };
       const status = error.type === 'NotFound' ? 404 : error.type === 'InputError' ? 400 : 500;

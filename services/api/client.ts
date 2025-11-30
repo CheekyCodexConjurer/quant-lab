@@ -166,12 +166,13 @@ export const apiClient = {
       low: number;
       close: number;
       volume?: number;
-    }[]
+    }[],
+    settings?: Record<string, unknown>
   ) {
     const res = await fetch(`${BASE_URL}/api/indicator-exec/${encodeURIComponent(id)}/run`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ candles }),
+      body: JSON.stringify({ candles, settings }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));

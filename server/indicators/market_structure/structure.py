@@ -1,7 +1,95 @@
 from .breaks import is_valid_high_break, is_valid_low_break
 
-MAX_LEVELS_PER_KIND = 2
-MAX_PROTECTED_LEVELS = 1
+# Limite apenas para niveis auxiliares (HSH/LSL, BOS etc.).
+# Protected High/Low mantem historico completo.
+MAX_LEVELS_PER_KIND = 24
+
+
+def _refine_protected_low_with_sweeps(protected_low, last_bull_break, open_, low, close):
+    """
+    Refina o Protected Low com base em sweeps (pavio abaixo, corpo acima),
+    conforme descrito na documentacao conceitual.
+    """
+    if protected_low is None or last_bull_break is None:
+        return protected_low
+
+    try:
+        level = float(protected_low["price"])
+        start_idx = int(protected_low["index"]) + 1
+        end_idx = int(last_bull_break["break_index"]) + 1
+    except (KeyError, TypeError, ValueError):
+        return protected_low
+
+    n = len(close)
+    if n == 0 or start_idx >= n:
+        return protected_low
+
+    end_idx = min(max(start_idx, end_idx), n)
+
+    best_sweep_index = None
+    best_sweep_price = None
+
+    for j in range(start_idx, end_idx):
+        lo = float(low[j])
+        op = float(open_[j])
+        cl = float(close[j])
+        cmin = op if op < cl else cl
+        # Sweep de Protected Low: low < L e corpo acima de L.
+        if lo < level and cmin > level:
+            if best_sweep_price is None or lo < best_sweep_price:
+                best_sweep_price = lo
+                best_sweep_index = j
+
+    if best_sweep_index is None:
+        return protected_low
+
+    return {
+        "index": int(best_sweep_index),
+        "price": float(best_sweep_price),
+    }
+
+
+def _refine_protected_high_with_sweeps(protected_high, last_bear_break, open_, high, close):
+    """
+    Refina o Protected High com base em sweeps (pavio acima, corpo abaixo).
+    """
+    if protected_high is None or last_bear_break is None:
+        return protected_high
+
+    try:
+        level = float(protected_high["price"])
+        start_idx = int(protected_high["index"]) + 1
+        end_idx = int(last_bear_break["break_index"]) + 1
+    except (KeyError, TypeError, ValueError):
+        return protected_high
+
+    n = len(close)
+    if n == 0 or start_idx >= n:
+        return protected_high
+
+    end_idx = min(max(start_idx, end_idx), n)
+
+    best_sweep_index = None
+    best_sweep_price = None
+
+    for j in range(start_idx, end_idx):
+        hi = float(high[j])
+        op = float(open_[j])
+        cl = float(close[j])
+        cmax = op if op > cl else cl
+        # Sweep de Protected High: high > H e corpo abaixo de H.
+        if hi > level and cmax < level:
+            if best_sweep_price is None or hi > best_sweep_price:
+                best_sweep_price = hi
+                best_sweep_index = j
+
+    if best_sweep_index is None:
+        return protected_high
+
+    return {
+        "index": int(best_sweep_index),
+        "price": float(best_sweep_price),
+    }
 
 
 def build_levels_and_markers(open_, high, low, close, swings):
@@ -151,6 +239,11 @@ def enrich_with_structure(swings, levels, markers, open_, high, low, close, brea
     elif last_bear_break:
         protected_high = last_bear_break["protected"]
 
+    # Sweeps em niveis protegidos refinam o valor do Protected Low/High
+    # sem, por si so, gerar MSS.
+    protected_low = _refine_protected_low_with_sweeps(protected_low, last_bull_break, open_, low, close)
+    protected_high = _refine_protected_high_with_sweeps(protected_high, last_bear_break, open_, high, close)
+
     if protected_low is not None:
         structural_markers.append(
             {
@@ -284,9 +377,11 @@ def enrich_with_structure(swings, levels, markers, open_, high, low, close, brea
 
     for level in reversed(all_levels):
         kind = level.get("kind") or ""
-        limit = MAX_LEVELS_PER_KIND
+        # Protected High/Low nao possuem limite: mantem todo historico.
         if "protected" in kind:
-            limit = MAX_PROTECTED_LEVELS
+            limited_levels.append(level)
+            continue
+        limit = MAX_LEVELS_PER_KIND
         count = per_kind_counts.get(kind, 0)
         if count >= limit:
             continue

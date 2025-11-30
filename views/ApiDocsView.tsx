@@ -200,8 +200,9 @@ export const ApiDocsView: React.FC = () => {
           <section id="inputs" className="scroll-mt-24 bg-white border border-slate-200 rounded-md p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-slate-900 mb-3">2. Inputs</h3>
             <p className="text-sm text-slate-600 mb-2">
-              The engine calls your entry point with a single parameter <span className="font-mono">inputs</span>, a dictionary containing
-              NumPy arrays of market data:
+              The engine calls your entry point with a primary parameter <span className="font-mono">inputs</span>, a dictionary containing
+              NumPy arrays of market data. Indicators that need runtime configuration can optionally accept a second{' '}
+              <span className="font-mono">settings</span> parameter with values coming from the UI.
             </p>
             <CodeBlock
               language="Python"
@@ -219,6 +220,11 @@ export const ApiDocsView: React.FC = () => {
             <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
               <li>All arrays share the same length and are ordered chronologically (index 0 is the oldest candle).</li>
               <li>If volume is not available it is filled with zeros.</li>
+              <li>
+                Optional settings are passed as a plain <span className="font-mono">dict[str, Any]</span> when the function signature is{' '}
+                <span className="font-mono">calculate(inputs, settings)</span>; when only <span className="font-mono">inputs</span> is
+                declared, the engine does not send the settings argument.
+              </li>
               <li>Typical libraries: numpy, pandas, talib, math.</li>
             </ul>
           </section>
@@ -228,7 +234,9 @@ export const ApiDocsView: React.FC = () => {
             <h3 className="text-sm font-semibold text-slate-900 mb-3">3. Outputs & Overlay</h3>
             <p className="text-sm text-slate-600 mb-2">
               <span className="font-mono">calculate</span> can return a simple series (NumPy array or list) or a structured overlay with
-              series, markers and levels:
+              series, markers and levels. The function signature can be either <span className="font-mono">calculate(inputs)</span> or{' '}
+              <span className="font-mono">calculate(inputs, settings)</span> when you want to consume parameters coming from the Indicator
+              Settings UI.
             </p>
             <CodeBlock
               language="Python"
@@ -262,11 +270,15 @@ export const ApiDocsView: React.FC = () => {
             </p>
             <ul className="list-decimal list-inside text-sm text-slate-600 space-y-1">
               <li>The frontend collects the current window of candles.</li>
-              <li>It calls <span className="font-mono">POST /api/indicator-exec/:id/run</span> with that window.</li>
+              <li>
+                It calls <span className="font-mono">POST /api/indicator-exec/:id/run</span> with that window and an optional{' '}
+                <span className="font-mono">settings</span> object describing the current values chosen in the Indicator Settings panel.
+              </li>
               <li>The backend resolves the indicator file and spawns the Python runner.</li>
               <li>
                 The runner imports the module, builds <span className="font-mono">inputs</span> and calls{' '}
-                <span className="font-mono">calculate(inputs)</span>.
+                <span className="font-mono">calculate(inputs)</span> or <span className="font-mono">calculate(inputs, settings)</span>{' '}
+                depending on the Python function signature.
               </li>
               <li>The result is normalized to JSON and returned as an overlay.</li>
             </ul>

@@ -135,3 +135,35 @@ export interface ChartAppearance {
   scaleTextColor: string;
   scaleTextSize: number;
 }
+
+export type IndicatorFieldType = 'number' | 'select' | 'boolean' | 'color' | 'text';
+
+export interface IndicatorFieldOption {
+  value: string;
+  label: string;
+}
+
+export interface IndicatorFieldDefinition {
+  id: string;
+  label: string;
+  type: IndicatorFieldType;
+  tab?: string;
+  section?: string;
+  description?: string;
+  placeholder?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  options?: IndicatorFieldOption[];
+  defaultValue: number | string | boolean;
+}
+
+export interface IndicatorSettingsDefinition {
+  id: string;
+  title?: string;
+  tabs?: string[];
+  fields: IndicatorFieldDefinition[];
+}
+
+export type IndicatorSettingValue = number | string | boolean;
+export type IndicatorSettingsValues = Record<string, IndicatorSettingValue>;

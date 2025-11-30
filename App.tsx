@@ -235,6 +235,7 @@ const AppContent: React.FC = () => {
             indicatorData={indicators.indicatorData}
             indicatorOverlays={indicators.indicatorOverlays}
             indicatorOrder={indicators.indicatorOrder}
+            indicatorSettings={indicators.indicatorSettings}
             activeSymbol={activeSymbol}
             onSymbolChange={setActiveSymbol}
             activeTimeframe={activeTimeframe}
@@ -242,6 +243,8 @@ const AppContent: React.FC = () => {
             onToggleIndicator={indicators.toggleActiveIndicator}
             onToggleVisibility={indicators.toggleVisibility}
             onRefreshIndicator={indicators.refreshFromDisk}
+            onUpdateIndicatorSettings={indicators.updateIndicatorSettings}
+            onResetIndicatorSettings={indicators.resetIndicatorSettings}
             timeframes={chartTimeframes}
             allTimeframes={sortedSymbolTimeframes}
             pinnedTimeframes={selectedTimeframes}

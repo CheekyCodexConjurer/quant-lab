@@ -17,21 +17,37 @@ def _ema_numpy(values: np.ndarray, period: int) -> np.ndarray:
     return ema
 
 
-def calculate(inputs):
+def calculate(inputs, settings=None):
     """
     Calculate EMA 100 indicator using The Lab indicator API v1.
 
     This implementation prefers TA-Lib when available, but gracefully falls back
     to a NumPy-based EMA to avoid hard dependency issues.
     """
-    close = np.asarray(inputs.get("close", []), dtype=float)
+    settings = settings or {}
+
+    raw_length = settings.get("length") if isinstance(settings, dict) else None
+    try:
+        length = int(raw_length)
+    except (TypeError, ValueError):
+        length = 100
+    if length < 1:
+        length = 1
+    if length > 5000:
+        length = 5000
+
+    source_key = str(settings.get("source") or "close").lower()
+    if source_key not in {"open", "high", "low", "close"}:
+        source_key = "close"
+
+    close = np.asarray(inputs.get(source_key, inputs.get("close", [])), dtype=float)
 
     if close.size == 0:
         return {"series": {"main": []}, "markers": [], "levels": []}
 
     if talib is not None:
-        ema = talib.EMA(close, timeperiod=100)
+        ema = talib.EMA(close, timeperiod=length)
     else:
-        ema = _ema_numpy(close, period=100)
+        ema = _ema_numpy(close, period=length)
 
     return {"series": {"main": ema}, "markers": [], "levels": []}

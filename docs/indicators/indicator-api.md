@@ -17,8 +17,8 @@ O objetivo é permitir que você escreva desde indicadores simples (SMA/EMA) at�
    - `POST /api/indicator-exec/:id/run`
 3. O backend:
    - resolve o arquivo Python (`indicators/... .py`);
-   - prepara `inputs` com arrays NumPy de OHLCV;
-   - executa `calculate(inputs)` via `server/indicator_runner/runner.py` em um processo Python separado;
+   - prepara `inputs` com arrays NumPy de OHLCV e um dicion�rio opcional `settings` com parametros enviados pelo frontend;
+   - executa `calculate(inputs)` ou `calculate(inputs, settings)` via `server/indicator_runner/runner.py` em um processo Python separado (a assinatura depende do que o indicador expuser);
    - normaliza o resultado e retorna JSON.
 4. O frontend converte a resposta em:
    - linhas (`series`) para o chart,

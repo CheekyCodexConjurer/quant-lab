@@ -103,6 +103,7 @@ const alignLevelWithCandles = (level, candles) => {
 
 const runIndicatorById = (id, candles, options = {}) => {
   const timeoutMs = typeof options.timeoutMs === 'number' ? options.timeoutMs : DEFAULT_TIMEOUT_MS;
+  const settings = options && typeof options.settings === 'object' ? options.settings : null;
 
   if (!Array.isArray(candles) || candles.length === 0) {
     logWarn('runIndicatorById called with empty candles', { module: 'indicatorExecution', id });
@@ -134,6 +135,7 @@ const runIndicatorById = (id, candles, options = {}) => {
       close: candles.map((c) => c.close),
       volume: candles.map((c) => (typeof c.volume === 'number' ? c.volume : 0)),
     },
+    settings: settings || undefined,
   };
 
   return new Promise((resolve) => {

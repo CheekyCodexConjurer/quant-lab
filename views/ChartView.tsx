@@ -1,15 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Eye, EyeOff, Star, StarOff, X, Paintbrush, RotateCcw } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, Star, StarOff, X, Paintbrush, RotateCcw, Settings } from 'lucide-react';
 import { LightweightChart, LightweightChartHandle } from '../components/LightweightChart';
 import { AVAILABLE_ASSETS } from '../constants/markets';
 import { TIMEFRAME_LIBRARY } from '../constants/timeframes';
-import { Candle, BacktestResult, CustomIndicator, ChartAppearance, IndicatorOverlay } from '../types';
+import { Candle, BacktestResult, CustomIndicator, ChartAppearance, IndicatorOverlay, IndicatorSettingsValues } from '../types';
 import { ChartStyleMenu } from '../components/chart/ChartStyleMenu';
 import { DEFAULT_APPEARANCE } from '../context/AppStateContext';
 import { normalizeSlashes } from '../utils/path';
 import { toTimestampSeconds } from '../utils/timeFormat';
 import { ChartContextMenu } from '../components/chart/ChartContextMenu';
 import { useAppState } from '../context/AppStateContext';
+import { IndicatorSettingsModal } from '../components/chart/IndicatorSettingsModal';
+import { useChartViewportCache } from '../hooks/chart/useChartViewportCache';
+import { useChartContextMenu } from '../hooks/chart/useChartContextMenu';
+import { buildDefaultIndicatorSettings, getIndicatorSettingsDefinition } from '../constants/indicatorSettings';
 
 type ChartViewProps = {
   data: Candle[];
@@ -21,6 +25,7 @@ type ChartViewProps = {
   indicatorData: Record<string, { time: string | number; value: number }[]>;
   indicatorOverlays?: Record<string, IndicatorOverlay>;
   indicatorOrder: string[];
+  indicatorSettings: Record<string, IndicatorSettingsValues>;
   activeSymbol: string;
   onSymbolChange: (symbol: string) => void;
   activeTimeframe: string;
@@ -28,6 +33,8 @@ type ChartViewProps = {
   onToggleIndicator: (id: string) => void;
   onToggleVisibility: (id: string) => void;
   onRefreshIndicator: (id: string) => void | Promise<void>;
+  onUpdateIndicatorSettings: (id: string, values: IndicatorSettingsValues) => void;
+  onResetIndicatorSettings: (id: string) => void;
   timeframes: string[];
   allTimeframes: string[];
   pinnedTimeframes: string[];
@@ -46,6 +53,7 @@ export const ChartView: React.FC<ChartViewProps> = ({
   indicatorData,
   indicatorOverlays,
   indicatorOrder,
+  indicatorSettings,
   activeSymbol,
   onSymbolChange,
   activeTimeframe,
@@ -53,6 +61,8 @@ export const ChartView: React.FC<ChartViewProps> = ({
   onToggleIndicator,
   onToggleVisibility,
   onRefreshIndicator,
+  onUpdateIndicatorSettings,
+  onResetIndicatorSettings,
   timeframes,
   allTimeframes,
   pinnedTimeframes,
@@ -86,22 +96,24 @@ export const ChartView: React.FC<ChartViewProps> = ({
   const [isStyleMenuOpen, setStyleMenuOpen] = useState(false);
   const chartRef = useRef<LightweightChartHandle>(null);
   const chartAreaRef = useRef<HTMLDivElement>(null);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
-  const [contextMenuOpen, setContextMenuOpen] = useState(false);
-  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const viewportKey = `${String(activeSymbol || '').toUpperCase()}::${String(activeTimeframe || '').toUpperCase()}`;
+  const [settingsIndicatorId, setSettingsIndicatorId] = useState<string | null>(null);
+  const [settingsDraft, setSettingsDraft] = useState<IndicatorSettingsValues>({});
+  const [settingsActiveTab, setSettingsActiveTab] = useState<string>('Inputs');
+  const {
+    contextMenuOpen,
+    contextMenuPos,
+    contextMenuRef,
+    onContextMenu,
+    closeContextMenu,
+  } = useChartContextMenu();
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setMenuOpen(false);
       }
-      if (
-        contextMenuOpen &&
-        contextMenuRef.current &&
-        !contextMenuRef.current.contains(event.target as Node)
-      ) {
-        setContextMenuOpen(false);
-      }
+      // context menu close is handled by useChartContextMenu
     };
     if (isMenuOpen) {
       window.addEventListener('mousedown', handleClick);
@@ -137,22 +149,7 @@ export const ChartView: React.FC<ChartViewProps> = ({
     };
   }, [isMenuOpen]);
 
-  useEffect(() => {
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setContextMenuOpen(false);
-      }
-    };
-    const handleScroll = () => setContextMenuOpen(false);
-    if (contextMenuOpen) {
-      window.addEventListener('keydown', handleKey);
-      window.addEventListener('scroll', handleScroll, true);
-    }
-    return () => {
-      window.removeEventListener('keydown', handleKey);
-      window.removeEventListener('scroll', handleScroll, true);
-    };
-  }, [contextMenuOpen]);
+  useChartViewportCache(chartRef, viewportKey);
 
   const togglePinned = (code: string) => {
     if (pinnedTimeframes.includes(code)) {
@@ -163,17 +160,6 @@ export const ChartView: React.FC<ChartViewProps> = ({
   };
 
   const isTimeframeAvailable = (code: string) => allTimeframes.includes(code);
-
-  const handleContextMenu = (event: React.MouseEvent) => {
-    event.preventDefault();
-    const rect = chartAreaRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setContextMenuPos({
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-    });
-    setContextMenuOpen(true);
-  };
 
   const handleResetView = () => {
     chartRef.current?.resetView();
@@ -331,6 +317,31 @@ export const ChartView: React.FC<ChartViewProps> = ({
                 >
                   <RotateCcw size={12} />
                 </button>
+                <button
+                  onClick={() => {
+                    const definition = getIndicatorSettingsDefinition(indicator.id);
+                    const baseDefinition =
+                      definition ?? {
+                        id: indicator.id,
+                        title: indicator.name,
+                        fields: [],
+                      };
+                    const defaults = buildDefaultIndicatorSettings(baseDefinition);
+                    const existing = indicatorSettings[indicator.id] || {};
+                    setSettingsIndicatorId(indicator.id);
+                    setSettingsDraft({ ...defaults, ...existing });
+                    const firstTab =
+                      (baseDefinition.tabs && baseDefinition.tabs[0]) ||
+                      (baseDefinition.fields.find((field) => field.tab)?.tab as string) ||
+                      'Inputs';
+                    setSettingsActiveTab(firstTab);
+                  }}
+                  className="ml-1 text-slate-400 hover:text-slate-900"
+                  aria-label="Indicator settings"
+                  title="Indicator settings"
+                >
+                  <Settings size={12} />
+                </button>
                 <button onClick={() => onToggleIndicator(indicator.id)} className="ml-1 text-slate-400 hover:text-rose-500">
                   <X size={12} />
                 </button>
@@ -341,7 +352,7 @@ export const ChartView: React.FC<ChartViewProps> = ({
 
       <div
         className="flex-1 relative min-h-[640px]"
-        onContextMenu={handleContextMenu}
+        onContextMenu={onContextMenu}
         ref={chartAreaRef}
       >
         <LightweightChart
@@ -356,10 +367,17 @@ export const ChartView: React.FC<ChartViewProps> = ({
                     [];
                   visibleIndicators.forEach((indicator, idx) => {
                     const baseColor = palette[idx % palette.length];
+                    const settingsForIndicator = indicatorSettings[indicator.id] || {};
+                    const lineColor =
+                      typeof settingsForIndicator.lineColor === 'string' && settingsForIndicator.lineColor
+                        ? (settingsForIndicator.lineColor as string)
+                        : baseColor;
+
                     const mainSeries = indicatorData[indicator.id] || [];
                     if (mainSeries.length) {
-                      lines.push({ id: indicator.id, data: mainSeries, color: baseColor, style: 'solid' });
+                      lines.push({ id: indicator.id, data: mainSeries, color: lineColor, style: 'solid' });
                     }
+
                     const overlay = indicatorOverlays?.[indicator.id];
                     if (overlay) {
                       if (overlay.series) {
@@ -370,15 +388,28 @@ export const ChartView: React.FC<ChartViewProps> = ({
                           lines.push({
                             id: `${indicator.id}:${key}`,
                             data: dataPoints,
-                            color: baseColor,
+                            color: lineColor,
                             style: 'solid',
                           });
                         });
                       }
                       if (overlay.levels && overlay.levels.length) {
-                        const levels = overlay.levels.slice(
-                          Math.max(0, overlay.levels.length - MAX_DRAWINGS_PER_INDICATOR)
+                        const allLevels = overlay.levels;
+                        const protectedLevels = allLevels.filter((level) =>
+                          typeof level.kind === 'string' && level.kind.toLowerCase().includes('protected')
                         );
+                        const otherLevels = allLevels.filter(
+                          (level) =>
+                            !level.kind ||
+                            !String(level.kind).toLowerCase().includes('protected')
+                        );
+                        const limitedOthers =
+                          otherLevels.length > MAX_DRAWINGS_PER_INDICATOR
+                            ? otherLevels.slice(
+                                otherLevels.length - MAX_DRAWINGS_PER_INDICATOR
+                              )
+                            : otherLevels;
+                        const levels = [...limitedOthers, ...protectedLevels];
                         levels.forEach((level, levelIdx) => {
                           const points = [
                             { time: level.timeStart, value: level.price },
@@ -403,8 +434,24 @@ export const ChartView: React.FC<ChartViewProps> = ({
               ? visibleIndicators
                   .flatMap((indicator) => {
                     const raw = indicatorOverlays[indicator.id]?.markers || [];
-                    const start = Math.max(0, raw.length - MAX_DRAWINGS_PER_INDICATOR);
-                    return raw.slice(start);
+                    const protectedMarkers = raw.filter(
+                      (m) =>
+                        m &&
+                        typeof m.kind === 'string' &&
+                        m.kind.toLowerCase().includes('protected')
+                    );
+                    const otherMarkers = raw.filter(
+                      (m) =>
+                        !m?.kind ||
+                        !String(m.kind).toLowerCase().includes('protected')
+                    );
+                    const limitedOthers =
+                      otherMarkers.length > MAX_DRAWINGS_PER_INDICATOR
+                        ? otherMarkers.slice(
+                            otherMarkers.length - MAX_DRAWINGS_PER_INDICATOR
+                          )
+                        : otherMarkers;
+                    return [...limitedOthers, ...protectedMarkers];
                   })
                   .filter((m) => m && m.time) || undefined
               : undefined
@@ -413,6 +460,53 @@ export const ChartView: React.FC<ChartViewProps> = ({
           timezone={chartTimezone}
           appearance={chartAppearance}
         />
+        {settingsIndicatorId
+          ? (() => {
+              const indicator = indicators.find((item) => item.id === settingsIndicatorId) || null;
+              const definitionFromConfig = getIndicatorSettingsDefinition(settingsIndicatorId);
+              const definition =
+                definitionFromConfig ??
+                (indicator
+                  ? {
+                      id: settingsIndicatorId,
+                      title: indicator.name,
+                      fields: [],
+                    }
+                  : {
+                      id: settingsIndicatorId,
+                      title: settingsIndicatorId,
+                      fields: [],
+                    });
+              return (
+                <IndicatorSettingsModal
+                  indicatorName={indicator?.name || settingsIndicatorId}
+                  definition={definition}
+                  values={settingsDraft}
+                  activeTab={settingsActiveTab}
+                  onTabChange={setSettingsActiveTab}
+                  onChangeValue={(fieldId, value) => {
+                    setSettingsDraft((prev) => ({
+                      ...prev,
+                      [fieldId]: value,
+                    }));
+                  }}
+                  onResetDefaults={() => {
+                    const defaults = buildDefaultIndicatorSettings(definition);
+                    setSettingsDraft(defaults);
+                    onResetIndicatorSettings(settingsIndicatorId);
+                  }}
+                  onCancel={() => {
+                    setSettingsIndicatorId(null);
+                    setSettingsDraft({});
+                  }}
+                  onApply={() => {
+                    onUpdateIndicatorSettings(settingsIndicatorId, settingsDraft);
+                    setSettingsIndicatorId(null);
+                  }}
+                />
+              );
+            })()
+          : null}
         {debugMode && hasVisibleIndicator && (
           <div className="absolute bottom-4 left-4 z-30 bg-slate-900/80 text-[10px] text-slate-100 px-3 py-2 rounded border border-slate-700 space-y-1 max-w-xs">
             <div className="font-semibold text-[10px] uppercase tracking-widest text-slate-400">
@@ -446,7 +540,7 @@ export const ChartView: React.FC<ChartViewProps> = ({
               y={contextMenuPos.y}
               onReset={handleResetView}
               onMoveToIndicator={hasVisibleIndicator ? handleMoveToLatestIndicator : undefined}
-              onClose={() => setContextMenuOpen(false)}
+              onClose={closeContextMenu}
             />
           </div>
         ) : null}

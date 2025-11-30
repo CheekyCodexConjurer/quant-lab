@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Settings, Code, RefreshCcw, Save, Play, CheckCircle2, FileText, Upload, Plus, Copy, MoreVertical, Trash } from 'lucide-react';
 import { CustomIndicator, StrategyFile, StrategyLabError } from '../types';
 import { useToast } from '../components/common/Toast';
@@ -7,10 +7,21 @@ import { FileTree, FileTreeNode } from '../components/files/FileTree';
 import { PythonEditor } from '../components/editor/PythonEditor';
 import { StrategyLogPanel } from '../components/strategy/StrategyLogPanel';
 import { LeanSettingsPanel } from '../components/lean/LeanSettingsPanel';
-import { ensureRootedPath, normalizeSlashes, toRelativePath, truncateMiddle } from '../utils/path';
+import { normalizeSlashes, toRelativePath, truncateMiddle } from '../utils/path';
 import { useHoverMenu } from '../components/ui/useHoverMenu';
 import { MenuSurface } from '../components/ui/MenuSurface';
 import { apiClient } from '../services/api/client';
+import { useStrategyLogs } from '../hooks/strategy/useStrategyLogs';
+import { useLeanSettingsAutosave } from '../hooks/strategy/useLeanSettingsAutosave';
+import {
+  STRATEGY_ROOT,
+  INDICATOR_ROOT,
+  derivePath,
+  deriveIndicatorPath,
+  buildTree,
+  buildIndicatorTree,
+  buildWorkspaceFolders,
+} from '../components/strategy/strategyTree';
 
 type StrategyViewProps = {
   onRunLeanBacktest: () => void;
@@ -54,208 +65,9 @@ type StrategyViewProps = {
   indicatorErrorDetails: Record<string, StrategyLabError | null>;
 };
 
-const STRATEGY_ROOT = 'strategies';
-const INDICATOR_ROOT = 'indicators';
 const PANEL_WIDTH_CLASS = 'w-[13.5rem] min-w-[13.5rem] max-w-[15rem]';
 const WORKSPACE_FOLDERS_KEY = 'thelab.workspaceFolders';
 const TREE_EXPANDED_KEY = 'thelab.strategyView.expanded';
-
-const derivePath = (strategy: StrategyFile) => {
-  const base = strategy.filePath || `${strategy.name || strategy.id}.py`;
-  const rooted = ensureRootedPath(STRATEGY_ROOT, base);
-  const rel = toRelativePath(STRATEGY_ROOT, rooted);
-  return rel ? `${STRATEGY_ROOT}/${rel}` : STRATEGY_ROOT;
-};
-
-const deriveIndicatorPath = (indicator: CustomIndicator) => {
-  const base = indicator.filePath || `${indicator.name || indicator.id}.py`;
-  const rooted = ensureRootedPath(INDICATOR_ROOT, base);
-  const rel = toRelativePath(INDICATOR_ROOT, rooted);
-  return rel ? `${INDICATOR_ROOT}/${rel}` : INDICATOR_ROOT;
-};
-
-const buildTree = (strategies: StrategyFile[], extraFolders: string[], order: string[]): FileTreeNode => {
-  const root: FileTreeNode = { id: STRATEGY_ROOT, name: STRATEGY_ROOT, path: STRATEGY_ROOT, type: 'folder', children: [] };
-  const byFolder: Record<string, FileTreeNode> = { [STRATEGY_ROOT]: root };
-
-  const registerFolder = (folderPath: string) => {
-    const normalized = ensureRootedPath(STRATEGY_ROOT, folderPath);
-    const rel = toRelativePath(STRATEGY_ROOT, normalized);
-    const parts = rel ? rel.split('/').filter(Boolean) : [];
-    let current = root;
-    parts.forEach((segment, index) => {
-      const currentPath = `${STRATEGY_ROOT}/${parts.slice(0, index + 1).join('/')}`;
-      if (!byFolder[currentPath]) {
-        const node: FileTreeNode = { id: currentPath, name: segment, path: currentPath, type: 'folder', children: [] };
-        byFolder[currentPath] = node;
-        current.children?.push(node);
-      }
-      current = byFolder[currentPath];
-    });
-  };
-
-  extraFolders.forEach(registerFolder);
-
-  strategies.forEach((strategy) => {
-    const fullPath = derivePath(strategy);
-    const rel = toRelativePath(STRATEGY_ROOT, fullPath);
-    const parts = rel ? rel.split('/').filter(Boolean) : [];
-    const folderParts = parts.slice(0, -1);
-    let current = root;
-    folderParts.forEach((segment, index) => {
-      const currentPath = `${STRATEGY_ROOT}/${folderParts.slice(0, index + 1).join('/')}`;
-      if (!byFolder[currentPath]) {
-        const node: FileTreeNode = { id: currentPath, name: segment, path: currentPath, type: 'folder', children: [] };
-        byFolder[currentPath] = node;
-        current.children?.push(node);
-      }
-      current = byFolder[currentPath];
-    });
-    const fileName = parts[parts.length - 1] || `${strategy.name || strategy.id}.py`;
-    current.children?.push({
-      id: strategy.id,
-      name: fileName,
-      path: fullPath,
-      type: 'file',
-    });
-  });
-
-  const sortNodes = (nodes?: FileTreeNode[]) =>
-    (nodes || [])
-      .sort((a, b) => {
-        if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
-        const idxA = order.findIndex((p) => normalizeSlashes(p) === normalizeSlashes(a.path));
-        const idxB = order.findIndex((p) => normalizeSlashes(p) === normalizeSlashes(b.path));
-        const wa = idxA >= 0 ? idxA : Number.MAX_SAFE_INTEGER;
-        const wb = idxB >= 0 ? idxB : Number.MAX_SAFE_INTEGER;
-        if (wa !== wb) return wa - wb;
-        return a.name.localeCompare(b.name);
-      })
-      .map((node) => ({ ...node, children: sortNodes(node.children) }));
-
-  return { ...root, children: sortNodes(root.children) };
-};
-
-const buildIndicatorTree = (
-  indicators: CustomIndicator[],
-  order: string[],
-  folders: string[],
-  workspaceItems: { path: string; type: 'file' | 'folder'; isMain?: boolean }[]
-): FileTreeNode => {
-  const root: FileTreeNode = { id: INDICATOR_ROOT, name: INDICATOR_ROOT, path: INDICATOR_ROOT, type: 'folder', children: [] };
-  const byFolder: Record<string, FileTreeNode> = { [INDICATOR_ROOT]: root };
-
-  const registerFolder = (folderPath: string) => {
-    const normalized = ensureRootedPath(INDICATOR_ROOT, folderPath);
-    const rel = toRelativePath(INDICATOR_ROOT, normalized);
-    const parts = rel ? rel.split('/').filter(Boolean) : [];
-    let current = root;
-    parts.forEach((segment, index) => {
-      const currentPath = `${INDICATOR_ROOT}/${parts.slice(0, index + 1).join('/')}`;
-      if (!byFolder[currentPath]) {
-        const node: FileTreeNode = { id: currentPath, name: segment, path: currentPath, type: 'folder', children: [] };
-        byFolder[currentPath] = node;
-        current.children?.push(node);
-      }
-      current = byFolder[currentPath];
-    });
-  };
-
-  indicators.forEach((indicator) => {
-    if (indicator.filePath) {
-      const folder = indicator.filePath.split('/').slice(0, -1).join('/');
-      if (folder && folder !== INDICATOR_ROOT) {
-        registerFolder(folder);
-      }
-    }
-  });
-  (folders || []).forEach((folderPath) => registerFolder(folderPath));
-
-  // Workspace items (arquivos de suporte, pastas internas etc.)
-  (workspaceItems || []).forEach((item) => {
-    const rawPath = item.path || '';
-    if (!rawPath.toLowerCase().startsWith('indicators/')) return;
-    const rel = toRelativePath(INDICATOR_ROOT, rawPath);
-    const parts = rel ? rel.split('/').filter(Boolean) : [];
-    if (!parts.length) return;
-    const folderParts = item.type === 'folder' ? parts : parts.slice(0, -1);
-    let current = root;
-    folderParts.forEach((segment, index) => {
-      const currentPath = `${INDICATOR_ROOT}/${folderParts.slice(0, index + 1).join('/')}`;
-      if (!byFolder[currentPath]) {
-        const node: FileTreeNode = { id: currentPath, name: segment, path: currentPath, type: 'folder', children: [] };
-        byFolder[currentPath] = node;
-        current.children?.push(node);
-      }
-      current = byFolder[currentPath];
-    });
-
-    if (item.type === 'file' && !item.isMain) {
-      const filePath = rawPath;
-      const fileName = parts[parts.length - 1];
-      const existing = current.children?.some((child) => normalizeSlashes(child.path) === normalizeSlashes(filePath));
-      if (!existing) {
-        current.children = current.children || [];
-        current.children.push({
-          id: filePath,
-          name: fileName,
-          path: filePath,
-          type: 'file',
-        });
-      }
-    }
-  });
-
-  indicators.forEach((indicator) => {
-    const fullPath = deriveIndicatorPath(indicator);
-    const rel = toRelativePath(INDICATOR_ROOT, fullPath);
-    const parts = rel ? rel.split('/').filter(Boolean) : [];
-    const folderParts = parts.slice(0, -1);
-    let current = root;
-    folderParts.forEach((segment, index) => {
-      const currentPath = `${INDICATOR_ROOT}/${folderParts.slice(0, index + 1).join('/')}`;
-      if (!byFolder[currentPath]) {
-        const node: FileTreeNode = { id: currentPath, name: segment, path: currentPath, type: 'folder', children: [] };
-        byFolder[currentPath] = node;
-        current.children?.push(node);
-      }
-      current = byFolder[currentPath];
-    });
-    const fileName = parts[parts.length - 1] || `${indicator.name || indicator.id}.py`;
-    current.children?.push({
-      id: indicator.id,
-      name: fileName,
-      path: fullPath,
-      type: 'file',
-    });
-  });
-
-  const sortNodes = (nodes?: FileTreeNode[]) =>
-    (nodes || [])
-      .sort((a, b) => {
-        if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
-        const idxA = order.findIndex((p) => normalizeSlashes(p) === normalizeSlashes(a.path));
-        const idxB = order.findIndex((p) => normalizeSlashes(p) === normalizeSlashes(b.path));
-        const wa = idxA >= 0 ? idxA : Number.MAX_SAFE_INTEGER;
-        const wb = idxB >= 0 ? idxB : Number.MAX_SAFE_INTEGER;
-        if (wa !== wb) return wa - wb;
-        return a.name.localeCompare(b.name);
-      })
-      .map((node) => ({ ...node, children: sortNodes(node.children) }));
-
-  return { ...root, children: sortNodes(root.children) };
-};
-
-const buildWorkspaceFolders = (folders: string[]): FileTreeNode[] =>
-  (folders || [])
-    .map((folder) => ({
-      id: folder,
-      name: folder.split('/').pop() || folder,
-      path: folder,
-      type: 'folder' as const,
-      children: [],
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
 
 export const StrategyView: React.FC<StrategyViewProps> = ({
   onRunLeanBacktest,
@@ -327,17 +139,12 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [actionMenuPath, setActionMenuPath] = useState<string | null>(null);
   const actionMenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [settingsDraft, setSettingsDraft] = useState<{ cash: number; feeBps: number; slippageBps: number }>(leanParams);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [activeKind, setActiveKind] = useState<'strategy' | 'indicator'>('strategy');
   const [workspaceFolders, setWorkspaceFolders] = useState<string[]>([]);
   const settingsMenu = useHoverMenu({ closeDelay: 150 });
   const createMenu = useHoverMenu({ closeDelay: 150 });
-  const settingsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [renderCreateMenu, setRenderCreateMenu] = useState(false);
-  const [strategyLogEvents, setStrategyLogEvents] = useState<StrategyLabError[]>([]);
-  const [editorErrorLines, setEditorErrorLines] = useState<number[]>([]);
-  const leanLogIndexRef = useRef(0);
   const clearActionTimer = () => {
     if (actionMenuCloseTimer.current) {
       clearTimeout(actionMenuCloseTimer.current);
@@ -348,86 +155,36 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
     clearActionTimer();
     actionMenuCloseTimer.current = setTimeout(() => setActionMenuPath(null), 150);
   };
-  const clearSettingsSaveTimer = () => {
-    if (settingsSaveTimer.current) {
-      clearTimeout(settingsSaveTimer.current);
-      settingsSaveTimer.current = null;
-    }
-  };
+  const {
+    strategyLogEvents,
+    editorErrorLines,
+    setEditorErrorLines,
+    appendStrategyLogEvent,
+  } = useStrategyLogs({
+    leanLogs,
+    leanErrorMeta: leanErrorMeta ?? null,
+    indicatorErrorDetails,
+    activeIndicatorId: activeIndicator?.id ?? null,
+  });
+
+  const {
+    settingsDraft,
+    setSettingsDraft,
+    flushSettingsSave,
+    scheduleSettingsSave,
+    clearSettingsSaveTimer,
+  } = useLeanSettingsAutosave({
+    leanParams,
+    onLeanParamsChange,
+    onAutosaveError: (error) => {
+      console.error('[settings] autosave failed', error);
+      addToast('Failed to save Lean settings', 'error');
+    },
+  });
 
   const activeIndicatorError = activeIndicator ? indicatorErrorDetails[activeIndicator.id] || null : null;
   const activeStrategyError = leanErrorMeta || null;
   const currentEditorError = activeKind === 'indicator' ? activeIndicatorError : activeStrategyError;
-
-  useEffect(() => {
-    if (!activeIndicator) return;
-    const detail = indicatorErrorDetails[activeIndicator.id];
-    if (!detail) return;
-    appendStrategyLogEvent(detail);
-    if (typeof detail.line === 'number') {
-      setEditorErrorLines([detail.line]);
-    }
-  }, [activeIndicator, indicatorErrorDetails]);
-
-  useEffect(() => {
-    if (!leanErrorMeta) return;
-    appendStrategyLogEvent(leanErrorMeta);
-    if (typeof leanErrorMeta.line === 'number') {
-      setEditorErrorLines([leanErrorMeta.line]);
-    }
-  }, [leanErrorMeta]);
-
-  useEffect(() => {
-    if (!Array.isArray(leanLogs) || leanLogs.length === 0) {
-      leanLogIndexRef.current = 0;
-      return;
-    }
-    let start = leanLogIndexRef.current;
-    if (start > leanLogs.length) {
-      start = 0;
-    }
-    for (let i = start; i < leanLogs.length; i += 1) {
-      const line = leanLogs[i];
-      if (!line) continue;
-      appendStrategyLogEvent({
-        source: 'lean',
-        type: 'LeanLog',
-        message: String(line),
-        createdAt: Date.now(),
-      });
-    }
-    leanLogIndexRef.current = leanLogs.length;
-  }, [leanLogs]);
-
-  const appendStrategyLogEvent = (event: StrategyLabError) => {
-    setStrategyLogEvents((prev) => {
-      const next = [...prev, event];
-      if (next.length > 300) {
-        return next.slice(next.length - 300);
-      }
-      return next;
-    });
-  };
-  const flushSettingsSave = useCallback(async () => {
-    clearSettingsSaveTimer();
-    const hasChanged =
-      settingsDraft.cash !== leanParams.cash ||
-      settingsDraft.feeBps !== leanParams.feeBps ||
-      settingsDraft.slippageBps !== leanParams.slippageBps;
-    if (!hasChanged) return;
-    try {
-      await Promise.resolve(onLeanParamsChange(settingsDraft));
-    } catch (error) {
-      console.error('[settings] autosave failed', error);
-      addToast('Failed to save Lean settings', 'error');
-    }
-  }, [settingsDraft, leanParams.cash, leanParams.feeBps, leanParams.slippageBps, onLeanParamsChange, addToast]);
-    const scheduleSettingsSave = useCallback(() => {
-    clearSettingsSaveTimer();
-    settingsSaveTimer.current = setTimeout(() => {
-      void flushSettingsSave();
-    }, 400);
-  }, [flushSettingsSave]);
 
   useEffect(() => {
     let cancelled = false;
@@ -546,10 +303,6 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
       setActiveKind('strategy');
     }
   }, [activeIndicator?.id, activeStrategy?.id]);
-
-  useEffect(() => {
-    setSettingsDraft(leanParams);
-  }, [leanParams.cash, leanParams.feeBps, leanParams.slippageBps]);
 
   useEffect(() => {
     if (!settingsMenu.isOpen) return;
@@ -1091,12 +844,19 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
                             const confirmed = window.confirm(`Delete ${target.name || target.id}?`);
                             if (confirmed) {
                               deleteIndicator(target.id);
-                              setIndicatorLogs((prev) => [...prev, `[indicator: ${target.name || target.id}] deleted`]);
+                              appendStrategyLogEvent({
+                                source: 'indicator',
+                                type: 'Info',
+                                message: `[indicator: ${target.name || target.id}] deleted`,
+                                createdAt: Date.now(),
+                              });
                               setSelectedIndicatorId((current) => (current === target.id ? null : current));
                               if (selectedIndicatorId === target.id) {
                                 setActiveKind('strategy');
                               }
-                              setIndicatorOrder(indicatorOrder.filter((path) => normalizeSlashes(path) !== normalizeSlashes(node.path)));
+                              setIndicatorOrder(
+                                indicatorOrder.filter((path) => normalizeSlashes(path) !== normalizeSlashes(node.path))
+                              );
                             }
                             setActionMenuPath(null);
                           }}
@@ -1219,10 +979,14 @@ export const StrategyView: React.FC<StrategyViewProps> = ({
                     onClick={async () => {
                       const nextActive = !activeIndicator.isActive;
                       await toggleActiveIndicator(activeIndicator.id);
-                      setIndicatorLogs((prev) => [
-                        ...prev,
-                        `[indicator: ${activeIndicator.name || activeIndicator.id}] ${nextActive ? 'activated' : 'deactivated'}`,
-                      ]);
+                      appendStrategyLogEvent({
+                        source: 'indicator',
+                        type: 'Info',
+                        message: `[indicator: ${activeIndicator.name || activeIndicator.id}] ${
+                          nextActive ? 'activated' : 'deactivated'
+                        }`,
+                        createdAt: Date.now(),
+                      });
                     }}
                     className="h-7 px-3 flex items-center gap-2 text-[11px] font-semibold rounded-full border border-slate-200 text-slate-600 bg-white/60 hover:text-slate-900 hover:bg-white focus:outline-none focus:ring-1 focus:ring-slate-300/20 transition-colors duration-150"
                     title="Toggle active"
