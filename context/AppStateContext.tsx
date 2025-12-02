@@ -96,7 +96,7 @@ const loadAppearance = (): ChartAppearance => {
 
 
 export const AppStateProvider = ({ children }: { children: ReactNode }) => {
-  const [activeView, setActiveView] = useState<ViewState>(ViewState.CHART);
+  const [activeView, setActiveView] = useState<ViewState>(ViewState.DASHBOARD);
   const [activeSymbol, setActiveSymbolState] = useState('CL1!');
   const [activeTimeframe, setActiveTimeframeState] = useState('H1');
 

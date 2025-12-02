@@ -1,6 +1,5 @@
 import React from 'react';
 import { Github } from 'lucide-react';
-import { MainContent } from '../components/layout/MainContent';
 
 const RepoCard: React.FC<{
   title: string;
@@ -33,7 +32,7 @@ const RepoCard: React.FC<{
 
 export const RepositoryView: React.FC = () => {
   return (
-    <MainContent className="bg-white border border-slate-200 p-10 shadow-sm min-h-[560px] h-auto min-h-full">
+    <div className="bg-white border border-slate-200 p-10 shadow-sm min-h-[560px] h-auto min-h-full rounded-2xl">
       <div className="border-b border-slate-100 pb-6 mb-8">
         <p className="text-slate-500 text-sm">
           Canonical repositories powering this workspace. Links open in a new tab.
@@ -63,6 +62,6 @@ export const RepositoryView: React.FC = () => {
           <li>The Lean integration expects a local installation of the QuantConnect Lean engine cloned from the repository above.</li>
         </ul>
       </div>
-    </MainContent>
+    </div>
   );
 };

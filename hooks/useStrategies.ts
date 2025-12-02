@@ -38,19 +38,14 @@ const loadAppliedVersion = (): number => {
   }
 };
 
-  const persistAppliedVersion = (version: number) => {
-    if (typeof window === 'undefined') return;
-    try {
-      window.localStorage.setItem(APPLIED_STRATEGY_KEY, String(version));
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const updateOrder = (next: string[]) => {
-    setStrategyOrder(next);
-    persistStrategyOrder(next);
-  };
+const persistAppliedVersion = (version: number) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(APPLIED_STRATEGY_KEY, String(version));
+  } catch {
+    /* ignore */
+  }
+};
 
 const normalizeFolder = (folderPath?: string) => {
   const raw = String(folderPath || 'strategies')
@@ -72,6 +67,11 @@ export const useStrategies = () => {
   const [selectedId, setSelectedId] = useState<string | null>(loadSelectedId);
   const [appliedVersion, setAppliedVersion] = useState<number>(loadAppliedVersion);
   const [strategyOrder, setStrategyOrder] = useState<string[]>(loadStrategyOrder);
+
+  const updateOrder = (next: string[]) => {
+    setStrategyOrder(next);
+    persistStrategyOrder(next);
+  };
 
   useEffect(() => {
     const bootstrap = async () => {

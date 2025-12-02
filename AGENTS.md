@@ -241,7 +241,7 @@ Sempre que escrever ou alterar código:
      - evitar ocupar espaço demais para controles secundários; priorizar conteúdo principal (gráfico, dados, código).
      - manter cantos levemente arredondados, espaçamentos consistentes, alinhamentos simétricos e hierarquia visual clara.
    - Ao criar novos componentes/views:
-     - alinhar com o estilo existente (`StrategyView`, `ChartView`, `DataSourcesView`, `MainHeader`, `Sidebar`).
+     - alinhar com o estilo Lumina atual (`LuminaShell`, `TradingChartView`, `LuminaStrategyEditorView`, `LuminaDashboardView`) e, quando reutilizar partes legacy, manter coesao com o visual existente.
      - evitar “novas telas” com estilos, cores ou densidade de informação que destoem do look & feel atual.
    - Animações:
      - usar transições suaves (fade-in/fade-out, pequenos deslocamentos) apenas onde agregarem clareza, nunca como enfeite excessivo.
@@ -346,4 +346,3 @@ Se você respeitar este arquivo + `architecture.md`, o projeto continua coerente
   - protocolo de erro/logging que ajude o usuA�rio a depurar;
   - extensibilidade futura (novos tipos de scripts, integraA�ao com Lean, etc.).
 - Mesmo em planos longos, manter a resposta **clara, faseada e navegA�vel** para humanos e LLMs (seAA�es, bullets, referA�ncias a arquivos), priorizando sempre a melhor experiA�ncia do usuA�rio final.
-

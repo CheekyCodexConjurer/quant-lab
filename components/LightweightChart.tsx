@@ -27,6 +27,7 @@ interface ChartProps {
 
 export type LightweightChartHandle = {
   resetView: () => void;
+  resetToLatest: () => void;
   focusTime: (time: string | number) => void;
   getVisibleRange: () => { from: number; to: number } | null;
   setVisibleRange: (range: { from: number; to: number } | null) => void;
@@ -108,10 +109,20 @@ export const LightweightChart = forwardRef<LightweightChartHandle, ChartProps>(
     }
   };
 
+  const resetToLatest = () => {
+    resetView();
+    if (!Array.isArray(data) || data.length === 0) return;
+    const lastCandle = data[data.length - 1];
+    const anchor = lastCandle?.time;
+    if (!anchor) return;
+    focusTime(anchor);
+  };
+
   useImperativeHandle(
     ref,
     () => ({
       resetView,
+      resetToLatest,
       focusTime,
       getVisibleRange,
       setVisibleRange,
@@ -368,7 +379,7 @@ export const LightweightChart = forwardRef<LightweightChartHandle, ChartProps>(
     series.setMarkers(combined);
   }, [trades, indicatorMarkers]);
 
-  return <div ref={chartContainerRef} className="w-full h-full" />;
+  return <div ref={chartContainerRef} className="w-full h-full rounded-[1.8rem] overflow-hidden" />;
 });
 
 LightweightChart.displayName = 'LightweightChart';

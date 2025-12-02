@@ -1,3 +1,5 @@
+import { getTimezoneById } from '../constants/timezones';
+
 const MS_IN_HOUR = 60 * 60 * 1000;
 
 export const timeframeToMinutes = (timeframe?: string) => {
@@ -27,13 +29,17 @@ export const timeframeToMinutes = (timeframe?: string) => {
 };
 
 export const parseTimezoneOffsetHours = (tz?: string) => {
-  if (!tz || tz.toUpperCase() === 'UTC') return 0;
-  const match = tz.toUpperCase().match(/^UTC([+-]?)(\d{1,2})$/);
+  if (!tz) return 0;
+  const upper = tz.toUpperCase();
+  if (upper === 'UTC') return 0;
+  const match = upper.match(/^UTC([+-]?)(\d{1,2})(?::(\d{1,2}))?$/);
   if (!match) return 0;
-  const [, sign, value] = match;
-  const hours = Number(value);
-  if (Number.isNaN(hours)) return 0;
-  return sign === '-' ? -hours : hours;
+  const [, sign, hoursStr, minutesStr] = match;
+  const hours = Number(hoursStr);
+  const minutes = minutesStr ? Number(minutesStr) : 0;
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return 0;
+  const value = hours + minutes / 60;
+  return sign === '-' ? -value : value;
 };
 
 export const toTimestampSeconds = (value: string | number, tz?: string) => {
@@ -43,7 +49,7 @@ export const toTimestampSeconds = (value: string | number, tz?: string) => {
         (value > 1e12 ? value : value * 1000)
       : Date.parse(value);
   if (Number.isNaN(baseMs)) return null;
-  const offsetMs = parseTimezoneOffsetHours(tz) * MS_IN_HOUR;
+  const offsetMs = tz ? parseTimezoneOffsetHours(tz) * MS_IN_HOUR : 0;
   return Math.floor((baseMs + offsetMs) / 1000);
 };
 
@@ -81,8 +87,20 @@ const fullFormatter = new Intl.DateTimeFormat('en-GB', {
   hour12: false,
 });
 
-export const formatTickLabel = (timestampSeconds: number, tz?: string, timeframe?: string) => {
-  const date = new Date(timestampSeconds * 1000);
+const getOffsetHoursForTimezoneId = (timezoneId?: string) => {
+  if (!timezoneId) return 0;
+  try {
+    const tz = getTimezoneById(timezoneId);
+    const raw = (tz?.offset || '').replace(/[()]/g, ''); // e.g. "UTC-3"
+    return parseTimezoneOffsetHours(raw);
+  } catch {
+    return 0;
+  }
+};
+
+export const formatTickLabel = (timestampSeconds: number, timezoneId?: string, timeframe?: string) => {
+  const offsetHours = getOffsetHoursForTimezoneId(timezoneId);
+  const date = new Date((timestampSeconds + offsetHours * 3600) * 1000);
   const hhmm = timeFormatter.format(date);
   if (hhmm === '00:00') {
     return dayFormatter.format(date);
@@ -96,7 +114,8 @@ export const formatTickLabel = (timestampSeconds: number, tz?: string, timeframe
   return hhmm;
 };
 
-export const formatTooltipLabel = (timestampSeconds: number, _tz?: string) => {
-  const date = new Date(timestampSeconds * 1000);
+export const formatTooltipLabel = (timestampSeconds: number, timezoneId?: string) => {
+  const offsetHours = getOffsetHoursForTimezoneId(timezoneId);
+  const date = new Date((timestampSeconds + offsetHours * 3600) * 1000);
   return fullFormatter.format(date);
 };

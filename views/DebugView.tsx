@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { MainContent } from '../components/layout/MainContent';
 import { DebugTerminal } from '../components/debug/DebugTerminal';
 import { apiClient } from '../services/api/client';
 import { useAppState } from '../context/AppStateContext';
@@ -32,7 +31,7 @@ export const DebugView: React.FC = () => {
   }, []);
 
   return (
-    <MainContent direction="column" className="gap-3 h-full bg-transparent">
+    <div className="flex flex-col gap-3 h-full bg-transparent">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">Debug & Diagnostics</h1>
@@ -90,7 +89,6 @@ export const DebugView: React.FC = () => {
           </p>
         </div>
       </div>
-    </MainContent>
+    </div>
   );
 };
-

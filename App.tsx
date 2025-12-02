@@ -1,19 +1,12 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { AppStateProvider, useAppState } from './context/AppStateContext';
-import { Sidebar } from './components/layout/Sidebar';
-import { MainHeader } from './components/layout/MainHeader';
 import { useIncrementalMarketData, prefetchMarketWindow } from './hooks/useIncrementalMarketData';
 import { useIndicators } from './hooks/useIndicators';
 import { useBacktest } from './hooks/useBacktest';
 import { useNormalizationSettings } from './hooks/useNormalizationSettings';
 import { AVAILABLE_TIMEFRAMES } from './constants/markets';
-import { ChartView } from './views/ChartView';
-import { DataNormalizationView } from './views/DataNormalizationView';
-import { StrategyView } from './views/StrategyView';
 import { AnalysisView } from './views/AnalysisView';
-import { ApiDocsView } from './views/ApiDocsView';
-import { RepositoryView } from './views/RepositoryView';
 import { DebugView } from './views/DebugView';
 import { ViewState } from './types';
 import { apiClient } from './services/api/client';
@@ -23,6 +16,13 @@ import { ToastProvider } from './components/common/Toast';
 import { useToast } from './components/common/Toast';
 import { useAvailableFrames } from './hooks/useAvailableFrames';
 import { useLeanBacktest } from './hooks/useLeanBacktest';
+import { DataConfigView } from './features/data-config/DataConfigView';
+import { LuminaShell } from './components/lumina/LuminaShell';
+import { LuminaDocumentationView } from './features/docs/LuminaDocumentationView';
+import { LuminaRepositoriesView } from './features/docs/LuminaRepositoriesView';
+import { TradingChartView } from './features/chart/TradingChartView';
+import { LuminaStrategyEditorView } from './features/strategy-lab/LuminaStrategyEditorView';
+import { LuminaDashboardView } from './features/dashboard/LuminaDashboardView';
 
 const TIMEFRAME_ORDER = [
   'S1',
@@ -195,7 +195,7 @@ const AppContent: React.FC = () => {
     setActiveView(ViewState.ANALYSIS);
   };
 
-  const handleRunLeanBacktest = async () => {
+  const handleRunLeanBacktest = async (codeOverride?: string) => {
     if (!strategies.activeStrategy) {
       addToast('No strategy loaded to run on Lean.', 'error');
       return;
@@ -204,7 +204,7 @@ const AppContent: React.FC = () => {
       await leanBacktest.runLeanBacktest({
         asset: activeSymbol,
         timeframe: activeTimeframe,
-        code: strategies.activeStrategy.code,
+        code: codeOverride ?? strategies.activeStrategy.code,
         cash: leanBacktest.params.cash,
         feeBps: leanBacktest.params.feeBps,
         slippageBps: leanBacktest.params.slippageBps,
@@ -226,9 +226,11 @@ const AppContent: React.FC = () => {
 
   const renderView = () => {
     switch (activeView) {
+      case ViewState.DASHBOARD:
+        return <LuminaDashboardView />;
       case ViewState.CHART:
         return (
-          <ChartView
+          <TradingChartView
             data={gapAdjustedData}
             backtestResult={backtestResult}
             indicators={indicators.indicators}
@@ -261,73 +263,49 @@ const AppContent: React.FC = () => {
         );
       case ViewState.DATA_NORMALIZATION:
         return (
-          <DataNormalizationView
+          <DataConfigView
             normTimezone={normalization.normTimezone}
             setNormTimezone={normalization.setNormTimezone}
-            normBasis={normalization.normBasis}
-            setNormBasis={normalization.setNormBasis}
-            normTickSize={normalization.normTickSize}
-            setTickFromPreset={normalization.setTickFromPreset}
-            overrideTickSize={normalization.overrideTickSize}
-            isCustomTick={normalization.isCustomTick}
             gapQuantEnabled={normalization.gapQuantEnabled}
             setGapQuantEnabled={normalization.setGapQuantEnabled}
             onSave={normalization.persistSettings}
             isSaving={normalization.isSaving}
-            activeSymbol={activeSymbol}
-            onChangeSymbol={setActiveSymbol}
           />
         );
       case ViewState.STRATEGY:
         return (
-          <StrategyView
-            onRunLeanBacktest={handleRunLeanBacktest}
-            onNavigateToChart={() => setActiveView(ViewState.CHART)}
-            strategies={strategies.strategies}
-            strategyOrder={strategies.strategyOrder}
-            setStrategyOrder={strategies.setStrategyOrder}
-            selectedStrategyId={strategies.selectedId}
-            setSelectedStrategyId={strategies.setSelectedId}
-            activeStrategy={strategies.activeStrategy}
-            createStrategy={strategies.createStrategy}
-            importStrategy={strategies.importStrategy}
-            deleteStrategy={strategies.deleteStrategy}
-            refreshFromDisk={(id) => strategies.refreshFromDisk(id)}
-            saveStrategy={(id, code) => strategies.saveStrategy(id, code)}
-            updateStrategyPath={strategies.updateStrategyPath}
-            onSave={(code) => strategies.selectedId && strategies.saveStrategy(strategies.selectedId, code)}
-            leanStatus={leanBacktest.status}
-            leanLogs={leanBacktest.logs}
-            leanJobId={leanBacktest.jobId}
-            leanError={leanBacktest.error}
-          leanParams={leanBacktest.params}
-          onLeanParamsChange={(next) => leanBacktest.setParams(next)}
-          indicators={indicators.indicators}
-          indicatorOrder={indicators.indicatorOrder}
-          setIndicatorOrder={indicators.setIndicatorOrder}
-            indicatorFolders={indicators.indicatorFolders}
-          addIndicatorFolder={indicators.addIndicatorFolder}
-          removeIndicatorFolder={indicators.removeIndicatorFolder}
-          selectedIndicatorId={indicators.selectedIndicatorId}
-          setSelectedIndicatorId={indicators.setSelectedIndicatorId}
-          activeIndicator={indicators.activeIndicator}
-          createIndicator={indicators.createIndicator}
-            deleteIndicator={indicators.deleteIndicator}
-            saveIndicator={indicators.saveIndicator}
-            toggleActiveIndicator={indicators.toggleActiveIndicator}
-            refreshIndicatorFromDisk={indicators.refreshFromDisk}
-            renameIndicator={indicators.renameIndicator}
-            updateIndicatorName={indicators.updateIndicatorName}
-            indicatorErrorDetails={indicators.indicatorErrorDetails}
-            leanErrorMeta={leanBacktest.errorMeta}
+          <LuminaStrategyEditorView
+            strategiesAdapter={{
+              strategies: strategies.strategies,
+              activeStrategy: strategies.activeStrategy,
+              selectedId: strategies.selectedId,
+              setSelectedId: strategies.setSelectedId,
+              saveStrategy: strategies.saveStrategy,
+              createStrategy: strategies.createStrategy,
+              importStrategy: strategies.importStrategy,
+              deleteStrategy: strategies.deleteStrategy,
+              updateStrategyPath: strategies.updateStrategyPath,
+            }}
+            indicatorsAdapter={{
+              indicators: indicators.indicators,
+              activeIndicator: indicators.activeIndicator,
+              selectedIndicatorId: indicators.selectedIndicatorId,
+              setSelectedIndicatorId: indicators.setSelectedIndicatorId,
+              createIndicator: indicators.createIndicator,
+              deleteIndicator: indicators.deleteIndicator,
+              saveIndicator: indicators.saveIndicator,
+              renameIndicator: indicators.renameIndicator,
+              toggleActiveIndicator: indicators.toggleActiveIndicator,
+            }}
+            onRunLean={handleRunLeanBacktest}
           />
         );
       case ViewState.ANALYSIS:
         return <AnalysisView backtestResult={backtestResult} activeSymbol={activeSymbol} onRunBacktest={handleRunBacktest} />;
       case ViewState.API_DOCS:
-        return <ApiDocsView />;
+        return <LuminaDocumentationView />;
       case ViewState.REPOSITORY:
-        return <RepositoryView />;
+        return <LuminaRepositoriesView />;
       case ViewState.DEBUG:
         return <DebugView />;
       default:
@@ -336,38 +314,25 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-[#fafafa] text-slate-900 font-sans">
-      <Sidebar activeView={activeView} onChange={setActiveView} debugMode={debugMode} />
-      <main className="flex-1 flex flex-col relative overflow-hidden bg-[#fafafa] min-h-0">
-        <MainHeader
-          activeView={activeView}
-          activeSymbol={activeSymbol}
-          activeTimeframe={activeTimeframe}
-          repoStatus={repoStatus}
-          onRunBacktest={handleRunBacktest}
-          licenseMode={license.mode}
-          debugMode={debugMode}
-          onToggleDebugMode={() => {
-            if (license.mode !== 'internal') return;
-            const next = !debugMode;
-            setDebugMode(next);
-            if (next) {
-              setActiveView(ViewState.DEBUG);
-            } else if (activeView === ViewState.DEBUG) {
-              setActiveView(ViewState.CHART);
-            }
-          }}
-        />
-        <div className="flex-1 px-10 py-8 overflow-y-auto min-h-0">
-          <div
-            className={`${[ViewState.CHART, ViewState.STRATEGY].includes(activeView) ? 'h-full' : 'min-h-full'
-              } flex`}
-          >
-            {renderView()}
-          </div>
-        </div>
-      </main>
-    </div>
+    <LuminaShell
+      activeView={activeView}
+      onChangeView={setActiveView}
+      repoStatus={repoStatus}
+      licenseMode={license.mode}
+      debugMode={debugMode}
+      onToggleDebugMode={() => {
+        if (license.mode !== 'internal') return;
+        const next = !debugMode;
+        setDebugMode(next);
+        if (next) {
+          setActiveView(ViewState.DEBUG);
+        } else if (activeView === ViewState.DEBUG) {
+          setActiveView(ViewState.CHART);
+        }
+      }}
+    >
+      {renderView()}
+    </LuminaShell>
   );
 };
 

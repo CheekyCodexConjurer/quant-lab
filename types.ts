@@ -98,6 +98,7 @@ export interface CustomIndicator {
 }
 
 export enum ViewState {
+  DASHBOARD = 'DASHBOARD',
   CHART = 'CHART',
   DATA_NORMALIZATION = 'DATA_NORMALIZATION',
   ANALYSIS = 'ANALYSIS',

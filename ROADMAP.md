@@ -47,7 +47,7 @@ Por padrao, **todos os textos de UI** (labels, tooltips, botoes, menus, mensagen
 
 Resumo rapido (detalhes em `architecture.md`):
 
-- Frontend: React + Vite + TypeScript, estado global em `AppStateContext`, views em `views/`, hooks em `hooks/`, UI minimalista (poucos botoes visiveis, muitos menus/contextos discretos, linguagem en-US).  
+- Frontend: React + Vite + TypeScript, estado global em `AppStateContext`, views em `views/`/`features/`, hooks em `hooks/`, UI minimalista (poucos botoes visiveis, muitos menus/contextos discretos, linguagem en-US).  
 - Backend: Express em `server/src/index.js`, rotas em `server/src/routes/`, servicos em `server/src/services/`, dados locais em `server/data/` + `server/db/market.db`.  
 - Lean: integrado via CLI, orquestrado pelo frontend (`useLeanBacktest`).  
 - Dados de mercado: CL futures locais (CSV vendor) importados via scripts para `server/data` (JSON segmentado) e ingeridos em SQLite (`server/db/market.db`), servidos em janelas por `/api/data/:asset/:timeframe?limit=&to=`.
@@ -67,7 +67,6 @@ Sair do estado experimental do `useLeanBacktest` e torna-lo um fluxo previsivel:
 
 - Frontend:
   - `hooks/useLeanBacktest.ts`
-  - `views/StrategyView.tsx`
   - `views/AnalysisView.tsx`
   - `utils/leanResultAdapter.ts`
   - `services/api/client.ts`
@@ -155,7 +154,7 @@ Permitir ao usuario escolher/importar dados para alguns instrumentos chave via D
 **Resumo (estado legacy)**  
 
 - Dukascopy continua disponivel apenas como backend legacy (jobs, JSONs em `server/data/raw`), mas a UI principal migrou para dados locais de futures CL.  
-- `DataSourcesView` e `useDataImport` foram removidos da navegacao; os datasets sao carregados diretamente de `server/data` via `dataCacheService`.
+- A antiga `DataSourcesView` e o hook `useDataImport` foram removidos da navegacao; os datasets sao carregados diretamente de `server/data` via `dataCacheService`.
 
 ---
 
@@ -172,8 +171,7 @@ Permitir um licenciamento **100% local** para Early Access, usado para gating le
   - `types.ts`
   - `context/AppStateContext.tsx`
   - `hooks/useLicense.ts`
-  - `components/layout/MainHeader.tsx`
-  - `components/layout/Sidebar.tsx`
+  - `components/lumina/LuminaShell.tsx`
   - `App.tsx`
 - Backend:
   - `server/src/services/licenseService.js`
@@ -463,8 +461,8 @@ Deixar o fluxo de uso natural para o usuario: ler a API, escrever o script, salv
 
 **Arquivos principais**
 
-- `views/StrategyView.tsx`
-- `views/IndicatorView.tsx`
+- `features/strategy-lab/LuminaStrategyEditorView.tsx`
+- (legacy) `views/IndicatorView.tsx`
 - `components/editor/PythonEditor.tsx`
 - `views/ApiDocsView.tsx`
 
@@ -671,9 +669,9 @@ Criar o esqueleto de contas online e de perfil de usuario, mantendo compatibilid
        - atualiza o contexto e dispara a persistencia em `localStorage`.
    - Preparar o hook para, em Fase 2, integrar opcionalmente com API (GET/PUT), mantendo fallback local quando o backend nao responder.
 
-3. **UI de perfil na Sidebar**
+3. **UI de perfil na Sidebar (Lumina)**
 
-   - Atualizar o bloco de perfil em `components/layout/Sidebar.tsx` para:
+   - Atualizar o bloco de perfil na sidebar Lumina (`lumina-edition/components/Sidebar.tsx`, orquestrado por `components/lumina/LuminaShell.tsx`) para:
      - exibir avatar circular:
        - se `avatarUrl` existir, usar imagem.
        - senao, usar iniciais do `username` ou fallback generico (ex.: `TL`).

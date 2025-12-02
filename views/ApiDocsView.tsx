@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { MainContent } from '../components/layout/MainContent';
 import { AlertTriangle, Copy, Info, XCircle } from 'lucide-react';
 
 const navItems = [
@@ -124,7 +123,7 @@ export const ApiDocsView: React.FC = () => {
   };
 
   return (
-    <MainContent className="bg-slate-50 border border-slate-200 px-0 py-8 shadow-sm min-h-[600px] h-auto min-h-full">
+    <div className="bg-slate-50 border border-slate-200 px-0 py-8 shadow-sm min-h-[600px] h-auto min-h-full rounded-2xl">
       <div className="max-w-3xl mx-auto px-6 pb-16">
         {/* Sticky header + tabs */}
         <div className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur border-b border-slate-200">
@@ -349,6 +348,6 @@ def calculate(inputs):
           </section>
         </div>
       </div>
-    </MainContent>
+    </div>
   );
 };

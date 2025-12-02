@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { MainContent } from '../components/layout/MainContent';
 import { Flag, Rocket, Calendar, ShieldCheck, Target, Loader2 } from 'lucide-react';
 
 type ListItem = { text: string; checked?: boolean };
@@ -164,7 +163,7 @@ export const RoadmapView: React.FC = () => {
   const blocks = useMemo(() => parseMarkdown(rawMd), [rawMd]);
 
   return (
-    <MainContent className="bg-white border border-slate-200 p-8 shadow-sm min-h-[600px] h-auto min-h-full">
+    <div className="bg-white border border-slate-200 p-8 shadow-sm min-h-[600px] h-auto min-h-full rounded-2xl">
       <div className="border-b border-slate-100 pb-3 mb-5 flex items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-light text-slate-900 mb-2">Internal Roadmap</h1>
@@ -253,6 +252,6 @@ export const RoadmapView: React.FC = () => {
           })}
         </div>
       )}
-    </MainContent>
+    </div>
   );
 };
