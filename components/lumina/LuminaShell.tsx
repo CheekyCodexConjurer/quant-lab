@@ -13,6 +13,7 @@ export interface LuminaShellProps {
   licenseMode: string;
   debugMode: boolean;
   onToggleDebugMode: () => void;
+  onRestart?: () => void;
   children: React.ReactNode;
 }
 
@@ -86,6 +87,7 @@ export const LuminaShell: React.FC<LuminaShellProps> = ({
   licenseMode,
   debugMode,
   onToggleDebugMode,
+  onRestart,
   children,
 }) => {
   const currentLuminaView = mapViewStateToLumina(activeView);
@@ -108,6 +110,7 @@ export const LuminaShell: React.FC<LuminaShellProps> = ({
           <Sidebar
             currentView={currentLuminaView}
             onChangeView={(next) => onChangeView(mapLuminaToViewState(next))}
+            onRestart={onRestart}
           />
         </div>
       </div>

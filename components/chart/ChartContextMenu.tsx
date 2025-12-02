@@ -33,8 +33,8 @@ export const ChartContextMenu: React.FC<ChartContextMenuProps> = ({ x, y, onRese
           }}
           className="w-full px-2.5 py-0.5 flex items-center gap-0.5 text-sm font-semibold hover:bg-slate-50 transition-colors text-left"
         >
-          <span className="text-slate-500 text-xs">⤵</span>
-          <span>Move to indicator plot</span>
+          <span className="text-slate-500 text-xs">⚪</span>
+          <span>Move to Indicator</span>
         </button>
       )}
     </div>

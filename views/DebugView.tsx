@@ -2,11 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { DebugTerminal } from '../components/debug/DebugTerminal';
 import { apiClient } from '../services/api/client';
 import { useAppState } from '../context/AppStateContext';
+import type { IndicatorOverlay } from '../types';
 
 export const DebugView: React.FC = () => {
   const { activeSymbol, activeTimeframe } = useAppState();
   const [healthSummary, setHealthSummary] = useState<string>('');
   const [loadingHealth, setLoadingHealth] = useState(false);
+  const [lastIndicatorOverlay, setLastIndicatorOverlay] = useState<IndicatorOverlay | null>(null);
 
   useEffect(() => {
     // Best-effort initial health fetch; ignore errors
@@ -29,6 +31,29 @@ export const DebugView: React.FC = () => {
     };
     fetchHealth();
   }, []);
+
+  useEffect(() => {
+    // Optional: fetch a quick snapshot of the first indicator overlay for debug.
+    const fetchSampleOverlay = async () => {
+      try {
+        const indicators = await apiClient.listIndicators();
+        const first = indicators?.items?.[0];
+        if (!first) return;
+        const coverage = await apiClient.fetchData(String(activeSymbol || 'CL1!'), String(activeTimeframe || 'M15'), {
+          limit: 500,
+        });
+        const candles = Array.isArray(coverage?.candles) ? coverage.candles : [];
+        if (!candles.length) return;
+        const result = await apiClient.runIndicator(first.id || first.name || 'ema_100.py', candles, {});
+        if (result && result.overlay) {
+          setLastIndicatorOverlay(result.overlay);
+        }
+      } catch {
+        setLastIndicatorOverlay(null);
+      }
+    };
+    fetchSampleOverlay();
+  }, [activeSymbol, activeTimeframe]);
 
   return (
     <div className="flex flex-col gap-3 h-full bg-transparent">
@@ -87,6 +112,23 @@ export const DebugView: React.FC = () => {
             All commands execute locally against your current environment. Use this console to debug issues like missing indicators,
             misaligned datasets or Lean integration problems without leaving The Lab.
           </p>
+          {lastIndicatorOverlay && (
+            <div className="mt-3 border-t border-slate-200 pt-2">
+              <h3 className="text-[11px] font-semibold text-slate-900 mb-1">Sample indicator overlay (debug)</h3>
+              <pre className="text-[10px] leading-snug bg-slate-50 rounded p-2 max-h-40 overflow-auto">
+                {JSON.stringify(
+                  {
+                    seriesKeys: Object.keys(lastIndicatorOverlay.series || {}),
+                    markers: (lastIndicatorOverlay.markers || []).length,
+                    levels: (lastIndicatorOverlay.levels || []).length,
+                    plots: lastIndicatorOverlay.plots ? lastIndicatorOverlay.plots.length : 0,
+                  },
+                  null,
+                  2
+                )}
+              </pre>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { TradingChart } from '../../lumina-edition/components/TradingChart';
-import { Candle, BacktestResult, CustomIndicator, IndicatorOverlay, IndicatorSettingsValues } from '../../types';
+import { Candle, BacktestResult, CustomIndicator, IndicatorOverlay, IndicatorSettingsValues, ChartAppearance } from '../../types';
 
 export interface TradingChartViewProps {
   data: Candle[];
@@ -25,6 +25,8 @@ export interface TradingChartViewProps {
   onPinnedChange: (timeframes: string[]) => void;
   chartTimezone: string;
   availableAssets: string[];
+  chartAppearance: ChartAppearance;
+  onAppearanceChange: (appearance: Partial<ChartAppearance>) => void;
 }
 
 export const TradingChartView: React.FC<TradingChartViewProps> = (props) => {
@@ -51,6 +53,8 @@ export const TradingChartView: React.FC<TradingChartViewProps> = (props) => {
       onRefreshIndicator={props.onRefreshIndicator}
       onUpdateIndicatorSettings={props.onUpdateIndicatorSettings}
       onResetIndicatorSettings={props.onResetIndicatorSettings}
+      appearance={props.chartAppearance}
+      onAppearanceChange={props.onAppearanceChange}
     />
   );
 };

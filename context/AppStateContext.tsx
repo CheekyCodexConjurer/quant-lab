@@ -42,6 +42,9 @@ const DEBUG_STORAGE_KEY = 'thelab.debugMode';
 const DEFAULT_TIMEZONE_ID = 'America/Sao_Paulo';
 const LICENSE_STORAGE_KEY = 'thelab.licenseState';
 const USER_STORAGE_KEY = 'thelab.userProfile';
+const ACTIVE_VIEW_STORAGE_KEY = 'thelab.activeView';
+const ACTIVE_SYMBOL_STORAGE_KEY = 'thelab.activeSymbol';
+const ACTIVE_TIMEFRAME_STORAGE_KEY = 'thelab.activeTimeframe';
 
 const loadPinnedTimeframes = () => {
   if (typeof window === 'undefined') return [...AVAILABLE_TIMEFRAMES];
@@ -58,22 +61,59 @@ const loadPinnedTimeframes = () => {
   return [...AVAILABLE_TIMEFRAMES];
 };
 
+const loadActiveView = (): ViewState => {
+  if (typeof window === 'undefined') return ViewState.DASHBOARD;
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_VIEW_STORAGE_KEY);
+    if (!raw) return ViewState.DASHBOARD;
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && ViewState[parsed as ViewState] !== undefined) {
+      return parsed as ViewState;
+    }
+  } catch {
+    /* ignore */
+  }
+  return ViewState.DASHBOARD;
+};
+
+const loadActiveSymbol = () => {
+  if (typeof window === 'undefined') return 'CL1!';
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_SYMBOL_STORAGE_KEY);
+    if (!raw) return 'CL1!';
+    return String(raw || 'CL1!').toUpperCase();
+  } catch {
+    return 'CL1!';
+  }
+};
+
+const loadActiveTimeframe = () => {
+  if (typeof window === 'undefined') return 'H1';
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_TIMEFRAME_STORAGE_KEY);
+    if (!raw) return 'H1';
+    return String(raw || 'H1').toUpperCase();
+  } catch {
+    return 'H1';
+  }
+};
+
 export const DEFAULT_APPEARANCE: ChartAppearance = {
-  backgroundColor: '#f8fafc',
+  backgroundColor: '#ffffff',
   gridEnabled: false,
   gridColor: '#e2e8f0',
   candleUp: {
-    body: '#ffffff',
-    border: '#111827',
-    wick: '#111827',
+    body: '#10b981',
+    border: '#10b981',
+    wick: '#10b981',
   },
   candleDown: {
-    body: '#111827',
-    border: '#111827',
-    wick: '#111827',
+    body: '#ef4444',
+    border: '#ef4444',
+    wick: '#ef4444',
   },
   usePrevCloseColoring: false,
-  scaleTextColor: '#111827',
+  scaleTextColor: '#64748b',
   scaleTextSize: 10,
 };
 
@@ -96,9 +136,9 @@ const loadAppearance = (): ChartAppearance => {
 
 
 export const AppStateProvider = ({ children }: { children: ReactNode }) => {
-  const [activeView, setActiveView] = useState<ViewState>(ViewState.DASHBOARD);
-  const [activeSymbol, setActiveSymbolState] = useState('CL1!');
-  const [activeTimeframe, setActiveTimeframeState] = useState('H1');
+  const [activeView, setActiveView] = useState<ViewState>(loadActiveView);
+  const [activeSymbol, setActiveSymbolState] = useState(loadActiveSymbol);
+  const [activeTimeframe, setActiveTimeframeState] = useState(loadActiveTimeframe);
 
   const [availableTimeframes, setAvailableTimeframesInternal] = useState<Record<string, string[]>>(() =>
     AVAILABLE_ASSETS.reduce((acc, asset) => {
@@ -158,6 +198,38 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     }
     return null;
   });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ACTIVE_VIEW_STORAGE_KEY, String(activeView));
+    } catch {
+      /* ignore */
+    }
+  }, [activeView]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ACTIVE_SYMBOL_STORAGE_KEY, activeSymbol);
+    } catch {
+      /* ignore */
+    }
+  }, [activeSymbol]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ACTIVE_TIMEFRAME_STORAGE_KEY, activeTimeframe);
+    } catch {
+      /* ignore */
+    }
+  }, [activeTimeframe]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ACTIVE_VIEW_STORAGE_KEY, String(activeView));
+    } catch {
+      /* ignore */
+    }
+  }, [activeView]);
   const [datasetRanges, setDatasetRangesState] = useState<
     Record<string, Record<string, { start?: string; end?: string; count?: number }>>
   >({});

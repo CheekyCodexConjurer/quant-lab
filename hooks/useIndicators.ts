@@ -11,13 +11,13 @@ import {
   persistIndicatorNames,
   persistIndicatorOrder,
   persistSelectedIndicatorId,
-  loadIndicatorSettings,
-  persistIndicatorSettings,
 } from '../utils/storage/indicatorStorage';
 import { normalizeSlashes } from '../utils/path';
 import { INDICATOR_ROOT, toIndicatorRelativePath } from '../utils/indicators/indicatorPaths';
 import { useIndicatorWorkspaceFolders } from './indicators/useIndicatorWorkspaceFolders';
 import { useIndicatorExecution } from './indicators/useIndicatorExecution';
+import { useIndicatorSettingsState } from './indicators/useIndicatorSettingsState';
+import { useIndicatorActivation } from './indicators/useIndicatorActivation';
 
 const seedIndicator = (): CustomIndicator => {
   const now = Date.now();
@@ -43,7 +43,7 @@ export const useIndicators = (data: Candle[]) => {
   const [appliedVersions, setAppliedVersions] = useState<Record<string, number>>(loadAppliedVersions);
   const [nameOverrides, setNameOverrides] = useState<Record<string, string>>(loadIndicatorNames);
   const [indicatorOrder, setIndicatorOrder] = useState<string[]>(loadIndicatorOrder);
-  const [indicatorSettings, setIndicatorSettings] = useState<Record<string, IndicatorSettingsValues>>(loadIndicatorSettings);
+  const { indicatorSettings, updateIndicatorSettings, resetIndicatorSettings } = useIndicatorSettingsState();
   const {
     indicatorFolders,
     addIndicatorFolder,
@@ -72,23 +72,10 @@ export const useIndicators = (data: Candle[]) => {
     persistIndicatorOrder(next);
   };
 
-  const updateIndicatorSettings = (id: string, values: IndicatorSettingsValues) => {
-    setIndicatorSettings((prev) => {
-      const next = { ...prev, [id]: values };
-      persistIndicatorSettings(next);
-      return next;
-    });
-  };
-
-  const resetIndicatorSettings = (id: string) => {
-    setIndicatorSettings((prev) => {
-      if (!prev[id]) return prev;
-      const next = { ...prev };
-      delete next[id];
-      persistIndicatorSettings(next);
-      return next;
-    });
-  };
+  const { setIndicatorActive, toggleActiveIndicator: toggleActiveIndicatorInternal } = useIndicatorActivation({
+    indicators,
+    setIndicators,
+  });
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -402,15 +389,7 @@ export const useIndicators = (data: Candle[]) => {
   };
 
   const toggleActiveIndicator = async (id: string) => {
-    const current = indicators.find((indicator) => indicator.id === id);
-    const nextValue = !current?.isActive;
-    setIndicators((prev) => prev.map((indicator) => (indicator.id === id ? { ...indicator, isActive: nextValue } : indicator)));
-    try {
-      await apiClient.setIndicatorActive(id, nextValue);
-    } catch (error) {
-      setIndicators((prev) => prev.map((indicator) => (indicator.id === id ? { ...indicator, isActive: !nextValue } : indicator)));
-      console.warn('[useIndicators] toggleActive failed', error);
-    }
+    await toggleActiveIndicatorInternal(id);
   };
 
   const toggleVisibility = (id: string) => {
@@ -498,5 +477,6 @@ export const useIndicators = (data: Candle[]) => {
     indicatorSettings,
     updateIndicatorSettings,
     resetIndicatorSettings,
+    setIndicatorActive,
   };
 };

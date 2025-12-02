@@ -27,6 +27,7 @@ router.post('/:id/run', async (req, res) => {
         series: result.series,
         markers: result.markers || [],
         levels: result.levels || [],
+        plots: result.plots || [],
       },
       meta: result.meta || {},
     };

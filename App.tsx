@@ -23,6 +23,8 @@ import { LuminaRepositoriesView } from './features/docs/LuminaRepositoriesView';
 import { TradingChartView } from './features/chart/TradingChartView';
 import { LuminaStrategyEditorView } from './features/strategy-lab/LuminaStrategyEditorView';
 import { LuminaDashboardView } from './features/dashboard/LuminaDashboardView';
+import { useIndicatorHotReload } from './hooks/indicators/useIndicatorHotReload';
+import { useStrategyHotReload } from './hooks/strategies/useStrategyHotReload';
 
 const TIMEFRAME_ORDER = [
   'S1',
@@ -99,8 +101,35 @@ const AppContent: React.FC = () => {
     setExternalResult(result);
     setActiveView(ViewState.ANALYSIS);
   });
+  const [workspaceDirty, setWorkspaceDirty] = useState(false);
   const addToast = useToast();
   const repoStatus: 'disconnected' | 'syncing' | 'synced' | 'error' = 'synced';
+  const hotReloadEnabled = activeView === ViewState.STRATEGY;
+  const hotReloadStartupDelay = 1200;
+
+  useIndicatorHotReload({
+    indicators: indicators.indicators,
+    refreshFromDisk: indicators.refreshFromDisk,
+    onHotReload: (indicator) => {
+      const name = indicator.name || indicator.id;
+      addToast(`Indicator "${name}" was reloaded from disk.`, 'success');
+    },
+    enabled: hotReloadEnabled,
+    startupDelayMs: hotReloadStartupDelay,
+    intervalMs: 2000,
+  });
+
+  useStrategyHotReload({
+    strategies: strategies.strategies,
+    refreshFromDisk: strategies.refreshFromDisk,
+    onHotReload: (strategy) => {
+      const name = strategy.name || strategy.id;
+      addToast(`Strategy "${name}" was reloaded from disk.`, 'success');
+    },
+    enabled: hotReloadEnabled,
+    startupDelayMs: hotReloadStartupDelay,
+    intervalMs: 2000,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -174,21 +203,36 @@ const AppContent: React.FC = () => {
   }, [normalization.normTimezone, setChartTimezone]);
 
   useEffect(() => {
+    if (activeView !== ViewState.CHART) {
+      // Quando o chart nao esta visivel, evitamos carregar dados de mercado
+      // para reduzir custo de inicializacao; qualquer carga em andamento
+      // e cancelada ao sair da view.
+      cancelCurrentLoad();
+      return;
+    }
     loadData({ asset: activeSymbol, timeframe: activeTimeframe });
     return () => cancelCurrentLoad();
-  }, [activeSymbol, activeTimeframe, loadData, cancelCurrentLoad]);
+  }, [activeSymbol, activeTimeframe, activeView, loadData, cancelCurrentLoad]);
 
   useEffect(() => {
+    if (activeView !== ViewState.CHART) return;
     const symbol = String(activeSymbol || '').toUpperCase();
     if (!symbol) return;
 
     const coreFrames = ['M1', 'M5', 'M15', 'H1', 'H4', 'D1'];
-    coreFrames
-      .filter((tf) => tf !== activeTimeframe.toUpperCase())
-      .forEach((tf) => {
+    const targets = coreFrames.filter((tf) => tf !== activeTimeframe.toUpperCase()).slice(0, 3);
+    if (!targets.length) return;
+
+    const timer = window.setTimeout(() => {
+      targets.forEach((tf) => {
         void prefetchMarketWindow(symbol, tf);
       });
-  }, [activeSymbol, activeTimeframe]);
+    }, 800);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [activeSymbol, activeTimeframe, activeView]);
 
   const handleRunBacktest = () => {
     runSimulation(candles);
@@ -296,8 +340,14 @@ const AppContent: React.FC = () => {
               saveIndicator: indicators.saveIndicator,
               renameIndicator: indicators.renameIndicator,
               toggleActiveIndicator: indicators.toggleActiveIndicator,
+              setIndicatorActive: indicators.setIndicatorActive,
+              refreshFromDisk: indicators.refreshFromDisk,
             }}
             onRunLean={handleRunLeanBacktest}
+            leanStatus={leanBacktest.status}
+            leanLogs={leanBacktest.logs}
+            leanErrorMeta={leanBacktest.errorMeta}
+            onWorkspaceDirtyChange={setWorkspaceDirty}
           />
         );
       case ViewState.ANALYSIS:
@@ -329,6 +379,23 @@ const AppContent: React.FC = () => {
         } else if (activeView === ViewState.DEBUG) {
           setActiveView(ViewState.CHART);
         }
+      }}
+      onRestart={async () => {
+        if (workspaceDirty) {
+          addToast('You have unsaved changes in Strategy Lab. Save them before restarting.', 'error');
+          return;
+        }
+        const confirmed = window.confirm('Restart The Lab and restore your current workspace?');
+        if (!confirmed) return;
+        try {
+          await apiClient.debugTerminal('restart-app');
+        } catch {
+          // ignore logging failures
+        }
+        addToast('Restarting The Lab...', 'info');
+        window.setTimeout(() => {
+          window.location.reload();
+        }, 400);
       }}
     >
       {renderView()}

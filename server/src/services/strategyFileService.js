@@ -55,14 +55,54 @@ const ensureDirFor = (relativePath) => {
 
 const toMeta = (filePath, relPath) => {
   const stat = fs.statSync(filePath);
+  const parsed = path.parse(filePath);
+  const isRootStrategy = !relPath.includes('/');
+
+  let lastModified = stat.mtimeMs;
+  let sizeBytes = stat.size;
+
+  // Para estrategias principais (server/strategies/*.py), consideramos tambem
+  // modulos auxiliares em pastas irmas (ex.: server/strategies/my_strategy/*)
+  // ao calcular lastModified. Isso garante que editar helpers externos
+  // invalida a versao usada pelo frontend/hot-reload.
+  if (isRootStrategy) {
+    const baseName = parsed.name;
+    const candidates = [baseName, baseName.replace(/-/g, '_')];
+    candidates.forEach((folderName) => {
+      const dirPath = path.join(parsed.dir, folderName);
+      if (!fs.existsSync(dirPath)) return;
+      const dirStat = fs.statSync(dirPath);
+      if (!dirStat.isDirectory()) return;
+
+      const stack = [dirPath];
+      while (stack.length) {
+        const currentDir = stack.pop();
+        const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+        entries.forEach((entry) => {
+          const full = path.join(currentDir, entry.name);
+          if (entry.isDirectory()) {
+            stack.push(full);
+            return;
+          }
+          if (!entry.isFile() || !entry.name.endsWith('.py')) return;
+          const s = fs.statSync(full);
+          if (s.mtimeMs > lastModified) {
+            lastModified = s.mtimeMs;
+          }
+          sizeBytes += s.size;
+        });
+      }
+    });
+  }
+
   const id = encodeId(relPath);
   const name = path.basename(relPath, path.extname(relPath));
   return {
     id,
     name: prettifyName(name),
     filePath,
-    lastModified: stat.mtimeMs,
-    sizeBytes: stat.size,
+    lastModified,
+    sizeBytes,
   };
 };
 

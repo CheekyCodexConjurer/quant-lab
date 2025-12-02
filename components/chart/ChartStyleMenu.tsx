@@ -31,7 +31,7 @@ const ColorInput = ({
 
 export const ChartStyleMenu: React.FC<ChartStyleMenuProps> = ({ appearance, onChange, onReset, onClose }) => {
   return (
-    <div className="absolute top-14 right-4 w-72 bg-white border border-slate-200 shadow-2xl rounded-sm p-4 z-30">
+    <div className="absolute top-14 right-4 w-80 bg-white border border-slate-200 shadow-2xl rounded-sm p-4 z-30">
       <div className="flex items-center justify-between mb-3">
         <h4 className="text-sm font-semibold text-slate-900">Chart Style</h4>
         <button onClick={onClose} className="text-slate-400 hover:text-slate-900 text-xs">Close</button>
@@ -63,45 +63,45 @@ export const ChartStyleMenu: React.FC<ChartStyleMenuProps> = ({ appearance, onCh
           />
         </div>
 
-        <div className="pt-1 border-t border-slate-100">
-          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-2">Candles Up</p>
-          <div className="space-y-2">
-            <ColorInput
-              label="Body"
-              value={appearance.candleUp.body}
-              onChange={(color) => onChange({ candleUp: { ...appearance.candleUp, body: color } })}
-            />
-            <ColorInput
-              label="Border"
-              value={appearance.candleUp.border}
-              onChange={(color) => onChange({ candleUp: { ...appearance.candleUp, border: color } })}
-            />
-            <ColorInput
-              label="Wick"
-              value={appearance.candleUp.wick}
-              onChange={(color) => onChange({ candleUp: { ...appearance.candleUp, wick: color } })}
-            />
-          </div>
-        </div>
+        <div className="pt-2 border-t border-slate-100">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bullish</p>
+              <ColorInput
+                label="Body"
+                value={appearance.candleUp.body}
+                onChange={(color) => onChange({ candleUp: { ...appearance.candleUp, body: color } })}
+              />
+              <ColorInput
+                label="Border"
+                value={appearance.candleUp.border}
+                onChange={(color) => onChange({ candleUp: { ...appearance.candleUp, border: color } })}
+              />
+              <ColorInput
+                label="Wick"
+                value={appearance.candleUp.wick}
+                onChange={(color) => onChange({ candleUp: { ...appearance.candleUp, wick: color } })}
+              />
+            </div>
 
-        <div className="pt-1 border-t border-slate-100">
-          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-2">Candles Down</p>
-          <div className="space-y-2">
-            <ColorInput
-              label="Body"
-              value={appearance.candleDown.body}
-              onChange={(color) => onChange({ candleDown: { ...appearance.candleDown, body: color } })}
-            />
-            <ColorInput
-              label="Border"
-              value={appearance.candleDown.border}
-              onChange={(color) => onChange({ candleDown: { ...appearance.candleDown, border: color } })}
-            />
-            <ColorInput
-              label="Wick"
-              value={appearance.candleDown.wick}
-              onChange={(color) => onChange({ candleDown: { ...appearance.candleDown, wick: color } })}
-            />
+            <div className="space-y-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bearish</p>
+              <ColorInput
+                label="Body"
+                value={appearance.candleDown.body}
+                onChange={(color) => onChange({ candleDown: { ...appearance.candleDown, body: color } })}
+              />
+              <ColorInput
+                label="Border"
+                value={appearance.candleDown.border}
+                onChange={(color) => onChange({ candleDown: { ...appearance.candleDown, border: color } })}
+              />
+              <ColorInput
+                label="Wick"
+                value={appearance.candleDown.wick}
+                onChange={(color) => onChange({ candleDown: { ...appearance.candleDown, wick: color } })}
+              />
+            </div>
           </div>
         </div>
 

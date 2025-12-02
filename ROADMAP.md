@@ -917,6 +917,105 @@ Adicionar uma camada de analytics de portfolio em cima dos resultados do Lean, u
 
 ---
 
+### 2.5. Strategy Auto-Documentation (ao fechar a estrategia)
+
+- [ ] **Status:** nao iniciado.
+
+**Objetivo**  
+Gerar automaticamente um "strategy doc" estruturado (Markdown/JSON) sempre que o usuario fechar uma estrategia no Strategy Lab, usando os metadados do script e o ultimo backtest para criar um resumo padrao que servira de base para leaderboard e marketplace.
+
+**Arquivos principais**
+
+- Frontend:
+  - `types.ts`
+  - `hooks/useStrategies.ts`
+  - `hooks/useLeanBacktest.ts`
+  - `features/strategy-lab/LuminaStrategyEditorView.tsx`
+  - `views/StrategyView.tsx` (se existir como view de orquestracao)
+- Backend:
+  - `server/src/services/strategyDocsService.js` (novo)
+  - `server/src/routes/strategyDocsRoutes.js` (novo)
+  - `server/src/services/lean/leanResultService.js` (reuso/estenso para extrair stats)
+- Docs:
+  - `docs/strategies/strategy-docs.md` (novo, guia de formato)
+
+**Tarefas de frontend (detector de fechamento + modelo de doc)**
+
+1. **Modelo de `StrategyDoc`**
+
+   - Adicionar, em `types.ts`, um tipo `StrategyDoc` com campos como:
+     - `id: string` (ex.: hash do caminho da estrategia);
+     - `strategyPath: string`;
+     - `title: string`;
+     - `summary: string` (em en-US, curto);
+     - `tags: string[]`;
+     - `parameters: { name: string; type: string; defaultValue?: string }[]`;
+     - `lastBacktest?: { runId: string; cagr?: number; sharpe?: number; maxDrawdown?: number; timeframe: string; symbol: string; datasetLabel?: string; runAt: string }`.
+   - Manter o tipo enxuto, mas preparado para integracao futura com leaderboard/marketplace.
+
+2. **Evento de fechamento de estrategia**
+
+   - Em `LuminaStrategyEditorView.tsx` / `StrategyView.tsx`, definir explicitamente o conceito de "fechar a estrategia":
+     - troca de arquivo no workspace,
+     - fechamento de aba,
+     - ou saida do Strategy Lab (`ViewState` mudando de STRATEGY para outra view).
+   - No handler correspondente, coletar:
+     - caminho da estrategia (`strategyPath`),
+     - titulo/nome amigavel (ex.: nome do arquivo sem extensao),
+     - tags basicas (pode comecar vazio),
+     - ultimo `BacktestResult` conhecido daquela estrategia (via `useLeanBacktest` / contexto de analise).
+   - Montar um payload `StrategyDocInput` minimalista para enviar ao backend.
+
+3. **Chamada de API para salvar doc**
+
+   - Estender `services/api/client.ts` com funcoes:
+     - `saveStrategyDoc(docInput)` -> `POST /api/strategy-docs`;
+     - `fetchStrategyDocs()` -> `GET /api/strategy-docs` (preparatorio para views futuras).
+   - Tratar erros de forma silenciosa (toast discreto em en-US), para nao atrapalhar o fluxo principal de uso do Strategy Lab.
+
+4. **UX minimalista de confirmacao**
+
+   - Opcionalmente, exibir um toast leve como:
+     - `"Strategy summary saved"` quando o doc for gerado com sucesso.
+   - Nao exibir modais ou formularios pesados neste momento; o objetivo é que o fluxo seja "fire-and-forget".
+
+**Tarefas de backend (service de docs)**
+
+1. **Servico de docs de estrategia**
+
+   - Criar `server/src/services/strategyDocsService.js` com funcoes:
+     - `saveOrUpdate(docInput)`:
+       - normaliza o `id` com base no caminho da estrategia.
+       - mescla informacoes ja existentes (ex.: tags editadas manualmente no futuro) com as novas stats de backtest.
+       - persiste em `server/data/strategy-docs/<id>.json`.
+     - `listDocs()`:
+       - lista todos os docs existentes, retornando um array de `StrategyDoc`.
+   - Garantir que o formato seja simples e legivel por humanos, para facilitar debugging e integraçao com ferramentas externas.
+
+2. **Rotas de docs**
+
+   - Criar `server/src/routes/strategyDocsRoutes.js` com endpoints:
+     - `POST /api/strategy-docs` -> recebe `StrategyDocInput`, delega a `saveOrUpdate` e retorna o doc completo.
+     - `GET /api/strategy-docs` -> retorna lista de docs.
+   - Registrar as rotas em `server/src/index.js` sob o prefixo `/api/strategy-docs`.
+
+3. **Integracao com resultados de backtest**
+
+   - Reusar/estender `leanResultService` ou servico equivalente para:
+     - obter o ultimo `BacktestResult` associado a uma estrategia (`strategyPath` ou `runId`);
+     - calcular um conjunto pequeno de metricas (CAGR, Sharpe, max drawdown, win rate) a serem anexadas ao doc.
+   - Manter a logica de metrics alinhada com o que ja é usado em `AnalysisView` e na futura camada QuantStats (2.4).
+
+**Notas de extensibilidade (link com leaderboard/marketplace)**
+
+- O `StrategyDoc` sera a base de dados para ranking e marketplace:
+  - docs consistentes permitem comparar estrategias de usuarios diferentes.
+  - ao centralizar o formato agora, evitamos migracoes duras no futuro.
+- Em fases futuras, o doc pode incluir:
+  - informacoes de autoria (`userProfile`),
+  - flags de privacidade,
+  - links para compartilhamento/marketplace.
+
 ## Fase 3 - v1.0 - Economic Data, Grid Search, etc.
 
 > **Status geral:** ainda nao iniciado.  
@@ -966,5 +1065,163 @@ Transformar o shell desktop em aplicativo instalavel (Tauri/Electron), definir u
 
 ---
 
-As demais fases (2.x, 3.x) devem ser detalhadas quando a Fase 1.2 estiver completamente consolidada em uso real.  
+### 3.2. Strategy Leaderboard (opt-in, backtest-driven)
+
+- [ ] **Status:** nao iniciado.
+
+**Objetivo**  
+Criar um leaderboard de estrategias baseado em resultados de backtest e docs de estrategia, permitindo ao usuario comparar desempenho (Sharpe, CAGR, drawdown, etc.) em ambiente local ou online, sempre com opt-in explicito para compartilhamento.
+
+**Arquivos principais**
+
+- Frontend:
+  - `types.ts`
+  - `features/leaderboard/StrategyLeaderboardView.tsx` (novo)
+  - `components/lumina/LuminaShell.tsx` (para integrar nova view)
+  - `services/api/client.ts` (extensoes para leaderboard)
+- Backend:
+  - `server/src/services/leaderboardService.js` (novo)
+  - `server/src/routes/leaderboardRoutes.js` (novo)
+  - `server/src/services/strategyDocsService.js` (reuso para leitura de docs)
+  - `server/src/services/analytics/quantstatsAdapter.js` (reuso opcional para metrics)
+
+**Tarefas de backend (modelo de ranking)**
+
+1. **Modelo de entrada do leaderboard**
+
+   - Basear o ranking em:
+     - `StrategyDoc` (nome, tags, autor, metadata);
+     - metricas agregadas de backtest (CAGR, Sharpe, max drawdown, win rate, numero de trades);
+     - contexto (ativo/timeframe/dataset).
+   - Definir um tipo `StrategyLeaderboardEntry` (em `types.ts` ou modulo backend) com campos como:
+     - `strategyId`, `strategyTitle`, `owner` (derivado de `UserProfile` quando disponivel);
+     - `coreMetrics` (objeto resumido);
+     - `rankScore` (score numerico calculado a partir das metrics).
+
+2. **Servico de leaderboard**
+
+   - Criar `leaderboardService` com funcoes:
+     - `buildLocalLeaderboard()`:
+       - le todos os `StrategyDoc`s locais.
+       - normaliza metricas (fallback para defaults quando algum dado faltar).
+       - calcula `rankScore` com formula simples (ex.: função ponderada de Sharpe, CAGR e drawdown).
+     - (preparatorio) `buildGlobalLeaderboard()`:
+       - pensado para integrar com backend remoto em versoes futuras (nao implementado inicialmente).
+
+3. **Rotas de leaderboard**
+
+   - Criar `server/src/routes/leaderboardRoutes.js` com endpoints:
+     - `GET /api/leaderboard/local` -> retorna leaderboard local (lista de `StrategyLeaderboardEntry`).
+     - (futuro) `GET /api/leaderboard/global` -> reservado para integracao remota.
+   - Garantir que, se o leaderboard global nao estiver configurado, o frontend continue operando apenas com dados locais.
+
+**Tarefas de frontend (view de leaderboard)**
+
+1. **View principal**
+
+   - Criar `StrategyLeaderboardView.tsx`:
+     - tabela ordenavel (colunas: Strategy, Owner, Sharpe, CAGR, Max DD, Trades, Dataset/TF).
+     - filtros leves (asset, timeframe, tags).
+     - densidade visual consistente com `LuminaDashboardView` (minimalista, sem poluicao).
+
+2. **Integracao com shell Lumina**
+
+   - Adicionar um novo `ViewState` (ex.: `LEADERBOARD`) em `types.ts`/`AppStateContext`.
+   - Integrar com `LuminaShell`/Sidebar:
+     - entrada discreta de menu para "Leaderboard".
+     - manter o estilo atual (sidebar compacta, icone + label curto).
+
+3. **Link com Strategy Lab e Analysis**
+
+   - Ao clicar em uma entrada do leaderboard:
+     - opcao de abrir a estrategia correspondente no Strategy Lab.
+     - opcao de abrir o ultimo backtest em `AnalysisView` (quando `runId` estiver disponivel).
+   - Reforcar que o leaderboard é sempre baseado em docs/metrics gerados localmente ou explicitamente compartilhados.
+
+**Privacy / opt-in**
+
+- Por padrao, o leaderboard so usa dados locais.
+- Qualquer futura integracao remota deve:
+  - exigir opt-in claro;
+  - evitar envio do codigo completo da estrategia por padrao (compartilhar apenas docs/metrics, a menos que o usuario marque para compartilhar codigo).
+
+---
+
+### 3.3. Strategy Marketplace (integrado com docs e backtesting)
+
+- [ ] **Status:** nao iniciado.
+
+**Objetivo**  
+Construir um marketplace de estrategias baseado em `StrategyDoc` + resultados de backtest, permitindo ao usuario descobrir, avaliar e instalar estrategias de outros usuarios, com foco em transparência de resultados e controle local do codigo.
+
+**Arquivos principais**
+
+- Frontend:
+  - `features/marketplace/StrategyMarketplaceView.tsx` (novo)
+  - `features/strategy-lab/LuminaStrategyEditorView.tsx` (integracao para instalar/abrir estrategias do marketplace)
+  - `services/api/client.ts` (cliente de marketplace)
+- Backend:
+  - `server/src/services/marketplaceService.js` (novo)
+  - `server/src/routes/marketplaceRoutes.js` (novo)
+  - `server/src/services/strategyDocsService.js` (reuso)
+  - `server/src/services/lean/*` (para validar/rodar backtests de estrategias importadas)
+
+**Tarefas de backend (modelo de marketplace local/online-ready)**
+
+1. **Catalogo local de estrategias**
+
+   - Definir um formato de catalogo em `server/data/strategy-marketplace/index.json` com:
+     - entradas contendo metadata derivada de `StrategyDoc` (id, titulo, tags, autor, metrics resumidas);
+     - informacoes de origem (local, remoto, versao).
+   - `marketplaceService` deve expor funcoes:
+     - `listLocalOffers()` -> derivar ofertas a partir de docs locais marcados como "shareable";
+     - `installStrategy(offerId)` -> baixar/copiar o codigo da estrategia (ou template) para a pasta local de estrategias.
+
+2. **Endpoints de marketplace**
+
+   - Criar `server/src/routes/marketplaceRoutes.js` com endpoints:
+     - `GET /api/marketplace/local` -> lista ofertas locais/instaladas.
+     - (futuro) `GET /api/marketplace/remote` -> placeholder para catalogo remoto.
+     - `POST /api/marketplace/install/:offerId` -> instala estrategia no workspace local.
+   - Garantir que o fluxo continue 100% funcional mesmo sem acesso a internet (modo somente-local).
+
+3. **Validacao de backtests**
+
+   - Integrar com os servicos Lean/analytics para:
+     - permitir que o usuario rode um backtest de verificacao apos instalar uma estrategia.
+     - opcionalmente comparar os resultados locais com as metricas declaradas no marketplace (flag "verified locally").
+
+**Tarefas de frontend (UX do marketplace)**
+
+1. **View de marketplace**
+
+   - Criar `StrategyMarketplaceView.tsx` com:
+     - grid/listagem de estrategias (cards ou tabela compacta).
+     - filtros por tags, ativos, timeframe.
+     - destaque para metricas principais (Sharpe, CAGR, drawdown) e origem (local/remoto).
+
+2. **Fluxo de instalacao**
+
+   - Botao `Install` ou `Add to Lab` em cada estrategia:
+     - chama `POST /api/marketplace/install/:offerId`.
+     - apos sucesso, abre a estrategia no Strategy Lab ou mostra atalho para isso.
+   - Toaster discreto em en-US confirmando instalacao.
+
+3. **Integracao com Strategy Lab / Analysis**
+
+   - A partir do marketplace:
+     - opcao de abrir o ultimo backtest conhecido em `AnalysisView`;
+     - opcao de rodar um novo backtest local para validar a estrategia com os dados do usuario.
+
+**Consideracoes de produto/seguranca**
+
+- Comecar com marketplace local (apenas estrategias do proprio usuario, com docs consistentes).
+- Planejar a extensao para marketplace remoto:
+  - canal oficial curado pelo The Lab;
+  - assinatura/verificacao simples de pacotes de estrategia;
+  - nunca executar codigo sem consentimento explicito do usuario.
+
+---
+
+As demais evolucoes de Fase 3 (dados economicos, grid search, seguranca reforcada) devem ser detalhadas conforme as entregas de Fase 2 forem consolidadas em uso real.  
 Para qualquer mudanca relevante de comportamento ou fluxo principal, **sempre atualizar este `ROADMAP.md` junto com `architecture.md`**.

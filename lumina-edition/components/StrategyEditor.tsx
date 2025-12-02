@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from 'react';
-import { Play, Save, Download, Copy, Terminal, AlertCircle, File, Folder, Trash2, Edit2, Plus, ChevronDown, ChevronRight, FileCode } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Play, Save, Download, Copy, File, Folder, Trash2, Edit2, Plus, ChevronDown, ChevronRight, FileCode, Upload } from 'lucide-react';
+import { PythonEditor } from '../../components/editor/PythonEditor';
+import { StrategyConsole } from './StrategyConsole';
 
 export interface FileNode {
   id: string;
@@ -21,7 +23,13 @@ export interface StrategyEditorProps {
   onRenameFile?: (id: string, newName: string) => void;
   onDeleteFile?: (id: string) => void;
   onCreateFile?: () => void;
-  onToggleIndicatorActive?: (id: string, nextActive: boolean) => void;
+  onCreateIndicatorFile?: () => void;
+  onToggleIndicatorActive?: (id: string, nextActive: boolean) => Promise<void> | void;
+  onImportFromFile?: (fileName: string, content: string) => void;
+  errorLines?: number[];
+  externalLogs?: { type: 'info' | 'success' | 'error'; text: string }[];
+  isRunBusy?: boolean;
+  activeIndicatorLastUpdateAt?: number | null;
 }
 
 export const StrategyEditor: React.FC<StrategyEditorProps> = ({
@@ -35,28 +43,54 @@ export const StrategyEditor: React.FC<StrategyEditorProps> = ({
   onRenameFile,
   onDeleteFile,
   onCreateFile,
+  onCreateIndicatorFile,
   onToggleIndicatorActive,
+  onImportFromFile,
+  errorLines,
+  externalLogs,
+  isRunBusy,
+  activeIndicatorLastUpdateAt,
 }) => {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['1', '2'])); // Default expanded folders
-  const [consoleOutput, setConsoleOutput] = useState([
-      { type: 'info', text: "> Loading 'market_structure' module..." },
-      { type: 'success', text: "> Calculation completed in 42ms" },
-      { type: 'info', text: "> Markers generated: 14" },
-  ]);
+  const [consoleOutput, setConsoleOutput] = useState<
+    { type: 'info' | 'success' | 'error'; text: string }[]
+  >(
+    externalLogs && externalLogs.length
+      ? externalLogs
+      : [
+          {
+            type: 'info',
+            text: "> Console attached. Run a Lean backtest to see output.",
+          },
+        ]
+  );
+
+  useEffect(() => {
+    if (externalLogs && externalLogs.length) {
+      setConsoleOutput(externalLogs);
+    }
+  }, [externalLogs]);
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!onDeleteFile) return;
+    const target = files.find((f) => f.id === id);
+    const label = target?.name || 'this item';
+    // confirmacao leve para evitar deletes acidentais
+    // eslint-disable-next-line no-alert
+    const ok = window.confirm(`Delete "${label}" from workspace?`);
+    if (!ok) return;
     onDeleteFile(id);
   };
 
   const handleRename = (id: string, currentName: string, e: React.MouseEvent) => {
       e.stopPropagation();
       if (!onRenameFile) return;
-      const newName = prompt("Rename item:", currentName);
-      if (newName) {
-        onRenameFile(id, newName);
-      }
+      const next = window.prompt('Rename item:', currentName);
+      if (!next) return;
+      const trimmed = next.trim();
+      if (!trimmed || trimmed === currentName) return;
+      onRenameFile(id, trimmed);
   };
 
   const handleFileClick = (id: string) => {
@@ -109,19 +143,31 @@ export const StrategyEditor: React.FC<StrategyEditorProps> = ({
   const activeIsIndicator = activeFile ? isIndicatorFile(activeFile) : false;
   const activeIndicatorOn = !!(activeFile && activeFile.indicatorActive);
 
-  const handleToggleActiveIndicator = () => {
-    if (!activeFile || !activeIsIndicator) return;
+  const handleToggleActiveIndicator = async () => {
+    if (!activeFile || !activeIsIndicator || !onToggleIndicatorActive) return;
     const nextActive = !activeIndicatorOn;
-    if (onToggleIndicatorActive) {
-      onToggleIndicatorActive(activeFile.id, nextActive);
+    try {
+      await Promise.resolve(onToggleIndicatorActive(activeFile.id, nextActive));
+      setConsoleOutput((prev) => [
+        ...prev,
+        {
+          type: 'success',
+          text: `> Indicator ${activeFile.name} is now ${nextActive ? 'active' : 'inactive'} on chart.`,
+        },
+      ]);
+    } catch (error) {
+      const message =
+        error instanceof Error && typeof error.message === 'string'
+          ? error.message
+          : 'Failed to update indicator state.';
+      setConsoleOutput((prev) => [
+        ...prev,
+        {
+          type: 'error',
+          text: `> Failed to toggle indicator "${activeFile.name}": ${message}`,
+        },
+      ]);
     }
-    setConsoleOutput((prev) => [
-      ...prev,
-      {
-        type: 'info',
-        text: `> Indicator ${activeFile.name} ${activeIndicatorOn ? 'disabled' : 'enabled'} for chart (workspace only).`,
-      },
-    ]);
   };
 
   const handleSaveActive = () => {
@@ -150,6 +196,46 @@ export const StrategyEditor: React.FC<StrategyEditorProps> = ({
         text: '> Mock run completed.',
       },
     ]);
+  };
+
+  const handleCopyActive = async () => {
+    if (!activeFile || !activeCode) return;
+    try {
+      await navigator.clipboard.writeText(activeCode);
+      setConsoleOutput((prev) => [
+        ...prev,
+        { type: 'success', text: `> Copied ${activeFile.name} to clipboard.` },
+      ]);
+    } catch {
+      setConsoleOutput((prev) => [
+        ...prev,
+        { type: 'info', text: `> Failed to copy ${activeFile.name} to clipboard.` },
+      ]);
+    }
+  };
+
+  const handleDownloadActive = () => {
+    if (!activeFile || !activeCode) return;
+    try {
+      const blob = new Blob([activeCode], { type: 'text/x-python' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = activeFile.name || 'strategy.py';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setConsoleOutput((prev) => [
+        ...prev,
+        { type: 'success', text: `> Downloaded ${activeFile.name}.` },
+      ]);
+    } catch {
+      setConsoleOutput((prev) => [
+        ...prev,
+        { type: 'info', text: `> Failed to download ${activeFile.name}.` },
+      ]);
+    }
   };
 
   const renderTree = (parentId?: string, depth = 0) => {
@@ -239,13 +325,52 @@ export const StrategyEditor: React.FC<StrategyEditorProps> = ({
       <div className="w-64 bg-white rounded-[2rem] shadow-soft p-6 flex flex-col hidden lg:flex">
          <div className="flex items-center justify-between mb-6 px-2">
             <h3 className="font-bold text-slate-800">Workspace</h3>
-            <button
-              type="button"
-              onClick={onCreateFile}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-sky-500 transition-colors"
-            >
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={onCreateFile}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-sky-500 transition-colors"
+                title="New strategy file"
+              >
                 <Plus size={16} />
-            </button>
+              </button>
+              {onCreateIndicatorFile && (
+                <button
+                  type="button"
+                  onClick={onCreateIndicatorFile}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-emerald-500 transition-colors"
+                  title="New indicator file"
+                >
+                  <FileCode size={16} />
+                </button>
+              )}
+              {onImportFromFile && (
+                <label
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-sky-500 transition-colors cursor-pointer"
+                  title="Import .py file"
+                >
+                  <Upload size={16} />
+                  <input
+                    type="file"
+                    accept=".py,.txt"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        const content = String(reader.result || '');
+                        onImportFromFile(file.name, content);
+                      };
+                      reader.readAsText(file);
+                      // reset para permitir importar o mesmo arquivo de novo
+                      // eslint-disable-next-line no-param-reassign
+                      event.target.value = '';
+                    }}
+                  />
+                </label>
+              )}
+            </div>
          </div>
          
          <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 -ml-2">
@@ -266,11 +391,6 @@ export const StrategyEditor: React.FC<StrategyEditorProps> = ({
                 <span className="text-slate-300">/</span>
                 <span className="text-slate-800 font-bold">{activeFile?.name || 'No file selected'}</span>
               </div>
-              {activeFile && (
-                  <span className="text-[10px] text-emerald-500 bg-emerald-50 px-2 py-1 rounded-md font-bold flex items-center gap-1">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> Edited
-                  </span>
-              )}
               {activeFile && activeIsIndicator && (
                 <button
                   type="button"
@@ -280,23 +400,48 @@ export const StrategyEditor: React.FC<StrategyEditorProps> = ({
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
                       : 'border-slate-200 bg-slate-50 text-slate-400'
                   }`}
-                  title={activeIndicatorOn ? 'Disable indicator on chart' : 'Enable indicator on chart'}
+                  title={activeIndicatorOn ? 'Deactivate indicator on chart' : 'Activate indicator on chart'}
                 >
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${
                       activeIndicatorOn ? 'bg-emerald-500' : 'bg-slate-300'
                     }`}
                   />
-                  <span>{activeIndicatorOn ? 'Indicator On' : 'Indicator Off'}</span>
+                  <span>{activeIndicatorOn ? 'Active' : 'Inactive'}</span>
                 </button>
+              )}
+              {activeFile && activeIsIndicator && activeIndicatorLastUpdateAt && (
+                <span
+                  className="text-[10px] text-slate-400"
+                  title="Updated automatically when you save this indicator or its dependencies."
+                >
+                  Last update at{' '}
+                  {new Date(activeIndicatorLastUpdateAt).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false,
+                  })}
+                </span>
               )}
            </div>
 
            <div className="flex items-center gap-2">
-              <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" title="Copy">
+              <button
+                type="button"
+                onClick={handleCopyActive}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+                title="Copy"
+                disabled={!activeFile}
+              >
                 <Copy size={18} />
               </button>
-              <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" title="Download">
+              <button
+                type="button"
+                onClick={handleDownloadActive}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+                title="Download"
+                disabled={!activeFile}
+              >
                 <Download size={18} />
               </button>
               <button
@@ -308,45 +453,33 @@ export const StrategyEditor: React.FC<StrategyEditorProps> = ({
                 <Save size={18} />
               </button>
               <button
-                className="flex items-center gap-2 px-6 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl ml-2 disabled:opacity-50"
+                className="flex items-center gap-2 px-6 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl ml-2 disabled:opacity-50 disabled:hover:bg-slate-900/80"
                 onClick={handleRunActive}
-                disabled={!activeFile}
+                disabled={!activeFile || isRunBusy}
               >
-                <Play size={16} fill="white" /> Run
+                <Play size={16} fill="white" />
+                {isRunBusy ? 'Running...' : 'Run'}
               </button>
            </div>
         </div>
 
         {/* Code Content */}
         <div className="flex-1 bg-white rounded-[2rem] shadow-soft p-0 overflow-hidden flex flex-col relative">
-          <div className="flex-1 p-6 font-mono text-sm overflow-auto custom-scrollbar leading-relaxed">
-             <textarea 
-               value={activeCode}
-               onChange={(e) => {
-                 if (!activeFile) return;
-                  const next = e.target.value;
-                 onChangeCode(next);
-               }}
-               className="w-full h-full resize-none outline-none text-slate-700 selection:bg-sky-100"
-               spellCheck={false}
-             />
-           </div>
+          <div className="flex-1 min-h-0">
+            <PythonEditor
+              value={activeCode}
+              onChange={(next) => {
+                if (!activeFile) return;
+                onChangeCode(next);
+              }}
+              placeholder="Write your Python strategy or indicator here..."
+              errorLines={errorLines}
+              className="h-full"
+            />
+          </div>
            
            {/* Terminal / Console Overlay */}
-           <div className="bg-slate-900 text-slate-300 p-4 font-mono text-xs border-t-4 border-slate-800">
-              <div className="flex justify-between items-center mb-2 text-slate-500 uppercase tracking-widest text-[10px] font-bold">
-                 <span className="flex items-center gap-2"><Terminal size={12} /> Console Output</span>
-                 <button className="hover:text-white" onClick={() => setConsoleOutput([])}><AlertCircle size={12}/></button>
-              </div>
-              <div className="space-y-1 opacity-80 h-24 overflow-y-auto custom-scrollbar">
-                {consoleOutput.map((log, i) => (
-                    <p key={i} className={log.type === 'success' ? 'text-emerald-400' : 'text-slate-300'}>
-                        {log.text}
-                    </p>
-                ))}
-                <p className="animate-pulse">_</p>
-              </div>
-           </div>
+           <StrategyConsole logs={consoleOutput} onClear={() => setConsoleOutput([])} />
         </div>
       </div>
     </div>

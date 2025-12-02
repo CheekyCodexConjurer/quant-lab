@@ -33,24 +33,24 @@ alinhado ao documento conceitual
       - Protected atual (n�vel vigente) e
       - Protected hist�ricos (linhas “fantasmas” / desativadas).
 
-## Fase 4 – MSC (Market Structure Continuation) (pendente)
+## Fase 4 – MSC (Market Structure Continuation) (parcial)
 
-- [ ] Detectar explicitamente eventos de **MSC bullish/bearish**, conforme se��o correspondente do
-      arquivo conceitual:
+- [x] Detectar explicitamente eventos de **MSC bullish/bearish** no backend, conforme se��o correspondente do
+      arquivo conceitual (segmento de tend�ncia atual):
       - BOS estrutural a favor da tend�ncia **sem** quebra do n�vel protegido oposto.
-- [ ] Marcar MSC no overlay como:
-      - marker `msc-bullish` / `msc-bearish` no candle da confirma��o; e
-      - opcionalmente, n�vel de perna (`msc-leg`) para visualiza��o da perna que confirmou a continua��o.
-- [ ] Atualizar Protected Low/High a partir do swing de origem da perna de MSC, conforme descrito em
-      `estrutura_de_mercado.md`.
+- [x] Marcar MSC no overlay como:
+      - markers `msc-bullish` / `msc-bearish` no candle da confirma��o; e
+      - n�veis de perna (`msc-leg`) para visualiza��o das pernas que confirmam a continua��o.
+- [x] Atualizar Protected Low/High a partir do swing de origem da perna de MSC no segmento vigente, conforme descrito em
+      `estrutura_de_mercado.md` (Protected Low/High derivado dos swings de origem das pernas impulsivas).
 
-## Fase 5 – Sweeps de estrutura (HSH/LSL) (parcial)
+## Fase 5 – Sweeps de estrutura (HSH/LSL) (conclu�da no backend)
 
-- [ ] Implementar detec��o expl�cita de **sweeps de HSH/LSL** (pavio atravessa HSH/LSL com corpo
-      n�o confirmando BOS).
-- [ ] Atualizar HSH/LSL com base nesses sweeps, mantendo o mesmo Protected Low/High,
-      conforme o arquivo conceitual.
-- [ ] Opcional: desenhar n�veis de sweep (`hsh-sweep`, `lsl-sweep`) com estilo ainda mais leve.
+- [x] Implementar detec��o expl�cita de **sweeps de HSH/LSL** (pavio atravessa HSH/LSL com corpo
+      n�o confirmando BOS) em `structure.py` (`_refine_hsh_with_sweeps`, `_refine_lsl_with_sweeps`).
+- [x] Atualizar HSH/LSL com base nesses sweeps, mantendo o mesmo Protected Low/High,
+      conforme o arquivo conceitual (apenas o extremo estrutural passa a refletir o novo pavio).
+- [x] Opcional: desenhar n�veis de sweep (`hsh-sweep`, `lsl-sweep`) com estilo ainda mais leve (n�veis auxiliares adicionais).
 
 ## Fase 6 – Overlay e integra��o com o frontend (parcial)
 
@@ -71,4 +71,3 @@ alinhado ao documento conceitual
       - cen�rios de consolida��o longa, gaps e revers�es r�pidas.
 - [ ] Documentar, a partir de screenshots, um “guia de leitura” do overlay no `docs/indicators/`,
       vinculando cada padr�o (MSS/MSC/sweep) a exemplos visuais reais.
-

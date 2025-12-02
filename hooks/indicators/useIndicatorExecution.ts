@@ -117,6 +117,7 @@ export const useIndicatorExecution = ({
               series: (response.overlay && response.overlay.series) || { main: line },
               markers: (response.overlay && response.overlay.markers) || [],
               levels: (response.overlay && response.overlay.levels) || [],
+              plots: (response.overlay && response.overlay.plots) || [],
             };
             const result: CachedIndicatorResult = {
               series: line,
@@ -204,4 +205,3 @@ export const useIndicatorExecution = ({
     forceRefreshIndicator,
   };
 };
-

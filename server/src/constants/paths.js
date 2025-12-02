@@ -1,6 +1,7 @@
 const path = require('path');
 
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
+// Workspace de indicadores Python (`server/indicators` relativo ao repo).
 const INDICATORS_DIR = path.join(ROOT_DIR, 'indicators');
 const STRATEGIES_DIR = path.join(ROOT_DIR, 'strategies');
 const LEAN_WORKSPACE_DIR = path.join(ROOT_DIR, 'lean_workspace');

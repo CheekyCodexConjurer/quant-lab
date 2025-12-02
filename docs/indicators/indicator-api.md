@@ -230,7 +230,7 @@ Campos:
 - `from: int` – índice inicial da faixa do nível.
 - `to: int` – índice final.
 - `price: float` – preço do nível.
-- `kind: str` – tipo do nível (`"protected-high"`, `"protected-low"`, `"hsh"`, `"lsl"`, `"zone"`, etc.).
+- `kind: str` – tipo do nível (`"protected-high"`, `"protected-low"`, `"hsh"`, `"lsl"`, `"hsh-sweep"`, `"lsl-sweep"`, `"msc-leg"`, `"zone"`, etc.).
 
 Comportamento:
 

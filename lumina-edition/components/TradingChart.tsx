@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import * as LightweightCharts from 'lightweight-charts';
 import {
   Settings,
@@ -21,12 +21,18 @@ import {
   CustomIndicator,
   IndicatorOverlay,
   IndicatorSettingsValues,
+  ChartAppearance,
 } from '../../types';
 import { formatTickLabel, formatTooltipLabel, toTimestampSeconds } from '../../utils/timeFormat';
 import { IndicatorSettingsModal } from '../../components/chart/IndicatorSettingsModal';
 import { buildDefaultIndicatorSettings, getIndicatorSettingsDefinition } from '../../constants/indicatorSettings';
 import { ChartContextMenu } from '../../components/chart/ChartContextMenu';
 import { useChartContextMenu } from '../../hooks/chart/useChartContextMenu';
+import {
+  buildChartInputsFromOverlay,
+  ChartLineInput,
+  ChartMarkerInput,
+} from './chart/indicatorPlotAdapter';
 
 type TradingChartProps = {
   activeSymbol?: string;
@@ -50,6 +56,8 @@ type TradingChartProps = {
   onUpdateIndicatorSettings?: (id: string, values: IndicatorSettingsValues) => void;
   onResetIndicatorSettings?: (id: string) => void;
   timezoneId?: string;
+  appearance?: ChartAppearance;
+  onAppearanceChange?: (appearance: Partial<ChartAppearance>) => void;
 };
 
 const MAX_DRAWINGS_PER_INDICATOR = 200;
@@ -100,16 +108,252 @@ const generateMockData = (count = 2000) => {
   return data;
 };
 
-// Dropdown Menu Components
-const Menu = ({ isOpen, onClose, children, className = "" }: any) => {
-    if (!isOpen) return null;
-    return (
-        <div className={`absolute top-full mt-2 bg-white/90 backdrop-blur-xl border border-slate-100 shadow-xl rounded-2xl p-2 z-50 min-w-[200px] animate-in fade-in zoom-in-95 duration-200 ${className}`}>
-             {children}
-             {/* Backdrop for click-outside */}
-             <div className="fixed inset-0 z-[-1]" onClick={onClose} />
-        </div>
-    );
+type MenuProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  className?: string;
+  anchorRef?: React.RefObject<HTMLElement>;
+  hoverCloseDelayMs?: number;
+  boundaryRef?: React.RefObject<HTMLElement>;
+  placement?: 'bottom-start' | 'bottom-center' | 'bottom-end' | 'top-start' | 'top-center' | 'top-end';
+  offset?: number;
+};
+
+// Shared dropdown menu surface with fade in/out and outside/escape handling.
+const Menu: React.FC<MenuProps> = ({
+  isOpen,
+  onClose,
+  children,
+  className = '',
+  anchorRef,
+  hoverCloseDelayMs,
+  boundaryRef,
+  placement = 'bottom-start',
+  offset = 10,
+}) => {
+  const [visible, setVisible] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const animationTimerRef = useRef<number | null>(null);
+  const hoverCloseTimerRef = useRef<number | null>(null);
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+
+  // Handle mount/unmount with fade-out window.
+  useEffect(() => {
+    if (isOpen) {
+      setVisible(true);
+      setIsClosing(false);
+      if (animationTimerRef.current) {
+        window.clearTimeout(animationTimerRef.current);
+        animationTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (!visible) return;
+
+    setIsClosing(true);
+    if (animationTimerRef.current) {
+      window.clearTimeout(animationTimerRef.current);
+    }
+    animationTimerRef.current = window.setTimeout(() => {
+      setVisible(false);
+      setIsClosing(false);
+    }, 180);
+
+    return () => {
+      if (animationTimerRef.current) {
+        window.clearTimeout(animationTimerRef.current);
+        animationTimerRef.current = null;
+      }
+    };
+  }, [isOpen, visible]);
+
+  // Global escape + click-outside handling.
+  useEffect(() => {
+    if (!visible) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose();
+      }
+    };
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      const container = containerRef.current;
+      const anchor = anchorRef?.current ?? null;
+      if (!target || !container) return;
+      if (container.contains(target)) return;
+      if (anchor && anchor.contains(target)) return;
+      onClose();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', handleClickOutside);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [visible, onClose, anchorRef]);
+
+  // Positioning relative to anchor + boundary with viewport clamping.
+  useEffect(() => {
+    if (!visible || !anchorRef?.current) return;
+
+    const updatePosition = () => {
+      const anchorEl = anchorRef.current;
+      const menuEl = containerRef.current;
+      if (!anchorEl || !menuEl) return;
+
+      const anchorRect = anchorEl.getBoundingClientRect();
+      const menuRect = menuEl.getBoundingClientRect();
+
+      const viewportRect = {
+        left: 0,
+        top: 0,
+        right: window.innerWidth,
+        bottom: window.innerHeight,
+      };
+
+      let boundaryRect = viewportRect;
+      const boundaryEl = boundaryRef?.current || null;
+      if (boundaryEl) {
+        const b = boundaryEl.getBoundingClientRect();
+        boundaryRect = {
+          left: Math.max(viewportRect.left, b.left),
+          top: Math.max(viewportRect.top, b.top),
+          right: Math.min(viewportRect.right, b.right),
+          bottom: Math.min(viewportRect.bottom, b.bottom),
+        };
+      }
+
+      const padding = 8;
+
+      const isBottom = placement === 'bottom-start' || placement === 'bottom-center' || placement === 'bottom-end';
+      const align: 'start' | 'center' | 'end' =
+        placement.endsWith('end') ? 'end' : placement.endsWith('start') ? 'start' : 'center';
+
+      let top = isBottom ? anchorRect.bottom + offset : anchorRect.top - offset - menuRect.height;
+
+      if (isBottom && top + menuRect.height > boundaryRect.bottom - padding) {
+        top = anchorRect.top - offset - menuRect.height;
+      } else if (!isBottom && top < boundaryRect.top + padding) {
+        top = anchorRect.bottom + offset;
+      }
+
+      let left: number;
+      if (align === 'end') {
+        left = anchorRect.right - menuRect.width;
+      } else if (align === 'center') {
+        left = anchorRect.left + (anchorRect.width - menuRect.width) / 2;
+      } else {
+        left = anchorRect.left;
+      }
+
+      const minLeft = boundaryRect.left + padding;
+      const maxLeft = boundaryRect.right - padding - menuRect.width;
+      left = Math.min(Math.max(left, minLeft), maxLeft);
+
+      const minTop = boundaryRect.top + padding;
+      const maxTop = boundaryRect.bottom - padding - menuRect.height;
+      top = Math.min(Math.max(top, minTop), maxTop);
+
+      setPosition({ top, left });
+    };
+
+    updatePosition();
+
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [visible, anchorRef]);
+
+  // Hover-out auto close used by menus that should behave like hover menus.
+  useEffect(() => {
+    if (!visible || !hoverCloseDelayMs || hoverCloseDelayMs <= 0) return;
+
+    const container = containerRef.current;
+    const anchor = anchorRef?.current ?? null;
+    if (!container && !anchor) return;
+
+    let inside = false;
+
+    const scheduleClose = () => {
+      if (hoverCloseTimerRef.current) return;
+      hoverCloseTimerRef.current = window.setTimeout(() => {
+        hoverCloseTimerRef.current = null;
+        onClose();
+      }, hoverCloseDelayMs);
+    };
+
+    const cancelClose = () => {
+      if (!hoverCloseTimerRef.current) return;
+      window.clearTimeout(hoverCloseTimerRef.current);
+      hoverCloseTimerRef.current = null;
+    };
+
+    const handleEnter = () => {
+      inside = true;
+      cancelClose();
+    };
+
+    const handleLeave = () => {
+      inside = false;
+      scheduleClose();
+    };
+
+    if (container) {
+      container.addEventListener('mouseenter', handleEnter);
+      container.addEventListener('mouseleave', handleLeave);
+    }
+    if (anchor) {
+      anchor.addEventListener('mouseenter', handleEnter);
+      anchor.addEventListener('mouseleave', handleLeave);
+    }
+
+    return () => {
+      if (container) {
+        container.removeEventListener('mouseenter', handleEnter);
+        container.removeEventListener('mouseleave', handleLeave);
+      }
+      if (anchor) {
+        anchor.removeEventListener('mouseenter', handleEnter);
+        anchor.removeEventListener('mouseleave', handleLeave);
+      }
+      cancelClose();
+    };
+  }, [visible, hoverCloseDelayMs, anchorRef, onClose]);
+
+  if (!visible) return null;
+
+  const transitionStyle: React.CSSProperties = {
+    opacity: isClosing ? 0 : 1,
+    transform: isClosing ? 'translateY(4px) scale(0.97)' : 'translateY(0px) scale(1)',
+    transition: 'opacity 0.18s ease-out, transform 0.18s ease-out',
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className={`fixed bg-white/90 backdrop-blur-xl border border-slate-100 shadow-xl rounded-2xl p-2 z-50 min-w-[200px] ${className}`}
+      style={{
+        ...transitionStyle,
+        top: position?.top ?? 0,
+        left: position?.left ?? 0,
+        visibility: position ? 'visible' : 'hidden',
+      }}
+    >
+      {children}
+    </div>
+  );
 };
 
 export const TradingChart: React.FC<TradingChartProps> = ({
@@ -134,11 +378,15 @@ export const TradingChart: React.FC<TradingChartProps> = ({
   onUpdateIndicatorSettings,
   onResetIndicatorSettings,
   timezoneId,
+  appearance,
+  onAppearanceChange,
 }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<LightweightCharts.IChartApi | null>(null);
   const candleSeriesRef = useRef<LightweightCharts.ISeriesApi<"Candlestick"> | null>(null);
   const indicatorSeriesMapRef = useRef<Record<string, LightweightCharts.ISeriesApi<"Line">>>({});
+  const timeframeTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   // State
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
@@ -146,12 +394,42 @@ export const TradingChart: React.FC<TradingChartProps> = ({
     []
   );
   
-  const [config, setConfig] = useState({
-      upColor: '#10b981',
-      downColor: '#ef4444',
-      bg: '#ffffff',
-      grid: false,
+  const [localAppearance, setLocalAppearance] = useState<ChartAppearance>({
+    backgroundColor: '#ffffff',
+    gridEnabled: false,
+    gridColor: '#e2e8f0',
+    candleUp: {
+      body: '#10b981',
+      border: '#10b981',
+      wick: '#10b981',
+    },
+    candleDown: {
+      body: '#ef4444',
+      border: '#ef4444',
+      wick: '#ef4444',
+    },
+    usePrevCloseColoring: false,
+    scaleTextColor: '#64748b',
+    scaleTextSize: 10,
   });
+
+  const effectiveAppearance = appearance || localAppearance;
+
+  const updateAppearance = useCallback(
+    (patch: Partial<ChartAppearance>) => {
+      if (onAppearanceChange) {
+        onAppearanceChange(patch);
+      } else {
+        setLocalAppearance((prev) => ({
+          ...prev,
+          ...patch,
+          candleUp: { ...prev.candleUp, ...(patch.candleUp || {}) },
+          candleDown: { ...prev.candleDown, ...(patch.candleDown || {}) },
+        }));
+      }
+    },
+    [onAppearanceChange]
+  );
 
   const [timeframe, setTimeframe] = useState(activeTimeframe || 'H1');
   const [settingsIndicatorId, setSettingsIndicatorId] = useState<string | null>(null);
@@ -177,6 +455,21 @@ export const TradingChart: React.FC<TradingChartProps> = ({
     onContextMenu,
     closeContextMenu,
   } = useChartContextMenu();
+
+  // Close any open dropdown menu when the main chart area scrolls.
+  useEffect(() => {
+    const container = chartContainerRef.current;
+    if (!container || !activeMenu) return;
+
+    const handleWheel = () => {
+      setActiveMenu(null);
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: true } as any);
+    return () => {
+      container.removeEventListener('wheel', handleWheel as any);
+    };
+  }, [activeMenu]);
 
   const resolvedPinnedTimeframes = useMemo(
     () => Array.from(new Set((pinnedTimeframes || []).map((tf) => String(tf).toUpperCase()))),
@@ -278,12 +571,19 @@ export const TradingChart: React.FC<TradingChartProps> = ({
 
     const chart = LightweightCharts.createChart(chartContainerRef.current, {
       layout: {
-        background: { type: LightweightCharts.ColorType.Solid, color: config.bg },
-        textColor: '#64748b',
+        background: { type: LightweightCharts.ColorType.Solid, color: effectiveAppearance.backgroundColor },
+        textColor: effectiveAppearance.scaleTextColor,
+        fontSize: effectiveAppearance.scaleTextSize,
       },
       grid: {
-        vertLines: { visible: config.grid, color: 'rgba(226, 232, 240, 0.4)' },
-        horzLines: { visible: config.grid, color: 'rgba(226, 232, 240, 0.4)' },
+        vertLines: {
+          visible: effectiveAppearance.gridEnabled,
+          color: effectiveAppearance.gridEnabled ? effectiveAppearance.gridColor : 'rgba(226, 232, 240, 0.0)',
+        },
+        horzLines: {
+          visible: effectiveAppearance.gridEnabled,
+          color: effectiveAppearance.gridEnabled ? effectiveAppearance.gridColor : 'rgba(226, 232, 240, 0.0)',
+        },
       },
       width: chartContainerRef.current.clientWidth,
       height: chartContainerRef.current.clientHeight,
@@ -311,11 +611,14 @@ export const TradingChart: React.FC<TradingChartProps> = ({
 
     // Candle Series
     const candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
-      upColor: config.upColor,
-      downColor: config.downColor,
-      borderVisible: false,
-      wickUpColor: config.upColor,
-      wickDownColor: config.downColor,
+      upColor: effectiveAppearance.candleUp.body,
+      downColor: effectiveAppearance.candleDown.body,
+      borderUpColor: effectiveAppearance.candleUp.border,
+      borderDownColor: effectiveAppearance.candleDown.border,
+      wickUpColor: effectiveAppearance.candleUp.wick,
+      wickDownColor: effectiveAppearance.candleDown.wick,
+      borderVisible: true,
+      priceLineVisible: false,
     });
     candleSeriesRef.current = candleSeries;
 
@@ -344,6 +647,39 @@ export const TradingChart: React.FC<TradingChartProps> = ({
       chartRef.current = null;
     };
   }, []); // Re-run only on mount, updates handled separately
+
+  // Update chart appearance when effectiveAppearance changes
+  useEffect(() => {
+    if (!chartRef.current || !candleSeriesRef.current) return;
+    chartRef.current.applyOptions({
+      layout: {
+        background: {
+          type: LightweightCharts.ColorType.Solid,
+          color: effectiveAppearance.backgroundColor,
+        },
+        textColor: effectiveAppearance.scaleTextColor,
+        fontSize: effectiveAppearance.scaleTextSize,
+      },
+      grid: {
+        vertLines: {
+          visible: effectiveAppearance.gridEnabled,
+          color: effectiveAppearance.gridEnabled ? effectiveAppearance.gridColor : 'rgba(226, 232, 240, 0.0)',
+        },
+        horzLines: {
+          visible: effectiveAppearance.gridEnabled,
+          color: effectiveAppearance.gridEnabled ? effectiveAppearance.gridColor : 'rgba(226, 232, 240, 0.0)',
+        },
+      },
+    });
+    candleSeriesRef.current.applyOptions({
+      upColor: effectiveAppearance.candleUp.body,
+      downColor: effectiveAppearance.candleDown.body,
+      borderUpColor: effectiveAppearance.candleUp.border,
+      borderDownColor: effectiveAppearance.candleDown.border,
+      wickUpColor: effectiveAppearance.candleUp.wick,
+      wickDownColor: effectiveAppearance.candleDown.wick,
+    });
+  }, [effectiveAppearance]);
 
   // Update scale / formatters on timeframe / timezone change
   useEffect(() => {
@@ -426,14 +762,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({
     const activeIndicators = Array.isArray(indicators) ? indicators : [];
     const visibleIndicators = activeIndicators.filter((item) => item.isActive && item.isVisible);
 
-    type IncomingLine = {
-      id: string;
-      color: string;
-      style?: 'solid' | 'dashed';
-      data: { time: string | number; value: number }[];
-    };
-
-    const incoming: IncomingLine[] = [];
+    const incoming: ChartLineInput[] = [];
 
     visibleIndicators.forEach((indicator, idx) => {
       const baseColor = palette[idx % palette.length];
@@ -443,14 +772,24 @@ export const TradingChart: React.FC<TradingChartProps> = ({
           ? (settingsForIndicator.lineColor as string)
           : baseColor;
 
-      const mainSeries = (indicatorData || {})[indicator.id] || [];
-      if (mainSeries.length) {
-        incoming.push({ id: indicator.id, data: mainSeries, color: lineColor, style: 'solid' });
-      }
-
       const overlay = (indicatorOverlays || {})[indicator.id];
-      if (overlay) {
-        if (overlay.series) {
+
+      // Prefer Plot API v1 quando houver overlay estruturado.
+      if (overlay && overlay.plots && overlay.plots.length) {
+        const { lines } = buildChartInputsFromOverlay(overlay, lineColor);
+        incoming.push(
+          ...lines.map((line) => ({
+            ...line,
+            color: line.color || lineColor,
+          }))
+        );
+      } else {
+        const mainSeries = (indicatorData || {})[indicator.id] || [];
+        if (mainSeries.length) {
+          incoming.push({ id: indicator.id, data: mainSeries, color: lineColor, style: 'solid' });
+        }
+
+        if (overlay && overlay.series) {
           Object.entries(overlay.series).forEach(([key, series]) => {
             if (key === 'main') return;
             const dataPoints = Array.isArray(series) ? series : [];
@@ -463,7 +802,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({
             });
           });
         }
-        if (overlay.levels && overlay.levels.length) {
+        if (overlay && overlay.levels && overlay.levels.length) {
           const allLevels = overlay.levels;
           const protectedLevels = allLevels.filter((level) =>
             typeof level.kind === 'string' && level.kind.toLowerCase().includes('protected')
@@ -485,8 +824,9 @@ export const TradingChart: React.FC<TradingChartProps> = ({
             incoming.push({
               id: `${indicator.id}:level:${levelIdx}`,
               data: points,
-              color: baseColor,
+              color: '#000000',
               style: 'dashed',
+              lineWidth: 1,
             });
           });
         }
@@ -516,14 +856,18 @@ export const TradingChart: React.FC<TradingChartProps> = ({
       if (!series) {
         series = chart.addSeries(LightweightCharts.LineSeries, {
           color: line.color,
-          lineWidth: 2,
+          lineWidth: typeof (line as any).lineWidth === 'number' ? (line as any).lineWidth : 2,
           lineStyle: style,
           priceLineVisible: false,
           lastValueVisible: false,
         });
         seriesMap[line.id] = series;
       } else {
-        series.applyOptions({ color: line.color, lineStyle: style });
+        series.applyOptions({
+          color: line.color,
+          lineStyle: style,
+          lineWidth: typeof (line as any).lineWidth === 'number' ? (line as any).lineWidth : 2,
+        });
       }
 
       const normalized = (line.data || [])
@@ -569,47 +913,60 @@ export const TradingChart: React.FC<TradingChartProps> = ({
       const activeIndicators = indicators.filter(
         (indicator) => indicator.isActive && indicator.isVisible
       );
-      const overlayMarkers =
-        activeIndicators
-          .flatMap((indicator) => {
-            const raw = indicatorOverlays[indicator.id]?.markers || [];
-            const protectedMarkers = raw.filter(
-              (m) =>
-                m &&
-                typeof m.kind === 'string' &&
-                m.kind.toLowerCase().includes('protected')
-            );
-            const otherMarkers = raw.filter(
-              (m) =>
-                !m?.kind ||
-                !String(m.kind).toLowerCase().includes('protected')
-            );
-            const limitedOthers =
-              otherMarkers.length > MAX_DRAWINGS_PER_INDICATOR
-                ? otherMarkers.slice(
-                    otherMarkers.length - MAX_DRAWINGS_PER_INDICATOR
-                  )
-                : otherMarkers;
-            return [...limitedOthers, ...protectedMarkers];
-          })
-          .filter((m) => m && m.time) || [];
 
-      overlayMarkers.forEach((m) => {
-        const ts = toTimestampSeconds(m.time);
-        if (ts === null) return;
-        const kind = (m.kind || '').toLowerCase();
-        const isBullish = /buy|long|bull|protected-low/.test(kind);
-        const isBearish = /sell|short|bear|protected-high/.test(kind);
-        const position = isBullish ? 'belowBar' : 'aboveBar';
-        const shape = isBullish ? 'arrowUp' : isBearish ? 'arrowDown' : 'circle';
-        const color = isBullish ? '#22c55e' : isBearish ? '#ef4444' : '#64748b';
-        const text = kind ? kind.toUpperCase() : '';
-        markers.push({
-          time: ts as any,
-          position,
-          color,
-          shape,
-          text,
+      activeIndicators.forEach((indicator) => {
+        const overlay = indicatorOverlays[indicator.id];
+        if (!overlay) return;
+
+        if (overlay.plots && overlay.plots.length) {
+          const { markers: plotMarkers } = buildChartInputsFromOverlay(overlay, '#64748b');
+          plotMarkers.forEach((m: ChartMarkerInput) => {
+            const ts = toTimestampSeconds(m.time);
+            if (ts === null) return;
+            markers.push({
+              time: ts as any,
+              position: m.position,
+              color: m.color,
+              shape: m.shape,
+              text: m.text,
+            });
+          });
+          return;
+        }
+
+        const raw = (overlay.markers || []).filter((m) => m && m.time);
+        const overlayMarkers =
+          raw.length > MAX_DRAWINGS_PER_INDICATOR
+            ? raw.slice(raw.length - MAX_DRAWINGS_PER_INDICATOR)
+            : raw;
+
+        overlayMarkers.forEach((m: any) => {
+          const ts = toTimestampSeconds(m.time);
+          if (ts === null) return;
+          const rawKind = typeof m.kind === 'string' ? m.kind : '';
+          const kind = rawKind.toLowerCase();
+          const explicitPosition =
+            m.position === 'aboveBar' || m.position === 'belowBar'
+              ? (m.position as 'aboveBar' | 'belowBar')
+              : undefined;
+          const baseColor = '#64748b';
+          const color =
+            (typeof m.color === 'string' && m.color) || baseColor;
+          const isBullish = /buy|long|bull/.test(kind);
+          const isBearish = /sell|short|bear/.test(kind);
+          const position: 'aboveBar' | 'belowBar' =
+            explicitPosition || (isBullish ? 'belowBar' : 'aboveBar');
+          const shape =
+            (m.shape as 'arrowUp' | 'arrowDown' | 'circle' | undefined) ||
+            (isBullish ? 'arrowUp' : isBearish ? 'arrowDown' : 'circle');
+          const text = rawKind ? rawKind.toUpperCase() : '';
+          markers.push({
+            time: ts as any,
+            position,
+            color,
+            shape,
+            text,
+          });
         });
       });
     }
@@ -620,29 +977,41 @@ export const TradingChart: React.FC<TradingChartProps> = ({
   // Indicator settings modal
   const activeIndicators = Array.isArray(indicators) ? indicators : [];
 
-  // Update Config Effect
+  const [openCustomPicker, setOpenCustomPicker] = useState<null | 'bull-body' | 'bull-wick' | 'bear-body' | 'bear-wick'>(null);
+
   useEffect(() => {
-    if (chartRef.current) {
-        chartRef.current.applyOptions({
-            layout: { background: { type: LightweightCharts.ColorType.Solid, color: config.bg } },
-            grid: {
-                vertLines: { visible: config.grid },
-                horzLines: { visible: config.grid },
-            }
-        });
-    }
-    if (candleSeriesRef.current) {
-        candleSeriesRef.current.applyOptions({
-            upColor: config.upColor,
-            downColor: config.downColor,
-            wickUpColor: config.upColor,
-            wickDownColor: config.downColor,
-        });
-    }
-  }, [config]);
+    if (!openCustomPicker) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setOpenCustomPicker(null);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => {
+      window.removeEventListener('keydown', handler);
+    };
+  }, [openCustomPicker]);
+
+  const BULL_BODY_PRESETS = ['#10b981', '#3b82f6', '#8b5cf6'] as const;
+  const BULL_WICK_PRESETS = ['#0f172a', '#16a34a', '#64748b'] as const;
+  const BEAR_BODY_PRESETS = ['#ef4444', '#f97316', '#64748b'] as const;
+  const BEAR_WICK_PRESETS = ['#0f172a', '#b91c1c', '#64748b'] as const;
+
+  const resolveCustomColor = (
+    presets: readonly string[],
+    selected: string,
+    explicitCustom?: string
+  ) => {
+    if (explicitCustom) return explicitCustom;
+    if (selected && !presets.includes(selected)) return selected;
+    return presets[0] || '#0f172a';
+  };
+
+  const viewRef = useRef<HTMLDivElement | null>(null);
 
   return (
-    <div className="h-full flex flex-col gap-4 animate-in fade-in duration-700">
+    <div ref={viewRef} className="h-full flex flex-col gap-4 animate-in fade-in duration-700">
       
       {/* Toolbar */}
       <div className="bg-white p-2 md:p-3 rounded-2xl shadow-soft flex flex-wrap justify-between items-center gap-4 relative z-20">
@@ -694,27 +1063,32 @@ export const TradingChart: React.FC<TradingChartProps> = ({
                  ))}
              </div>
 
-             {/* Timeframe Dropdown Trigger */}
-             <div className="relative">
-               <button
-                 onClick={() => toggleMenu('timeframes')}
-                 className={`ml-1 h-8 px-3 rounded-lg flex items-center gap-1 text-xs font-semibold transition-all ${
-                   activeMenu === 'timeframes'
-                     ? 'bg-sky-100 text-sky-700'
-                     : 'bg-white text-slate-600 hover:bg-slate-100'
-                 }`}
-                 aria-haspopup="listbox"
-                 aria-expanded={activeMenu === 'timeframes'}
-               >
-                 <span>{timeframe}</span>
-                 <ChevronDown size={14} />
-               </button>
+            {/* Timeframe Dropdown Trigger */}
+            <div className="relative">
+              <button
+                ref={timeframeTriggerRef}
+                onClick={() => toggleMenu('timeframes')}
+                className={`ml-1 h-8 px-3 rounded-lg flex items-center gap-1 text-xs font-semibold transition-all ${
+                  activeMenu === 'timeframes'
+                    ? 'bg-sky-100 text-sky-700'
+                    : 'bg-white text-slate-600 hover:bg-slate-100'
+                }`}
+                aria-haspopup="listbox"
+                aria-expanded={activeMenu === 'timeframes'}
+              >
+                <span>{timeframe}</span>
+                <ChevronDown size={14} />
+              </button>
 
-               <Menu
-                 isOpen={activeMenu === 'timeframes'}
-                 onClose={() => setActiveMenu(null)}
-                 className="right-0 w-60"
-               >
+              <Menu
+                isOpen={activeMenu === 'timeframes'}
+                onClose={() => setActiveMenu(null)}
+                className="w-60"
+                anchorRef={timeframeTriggerRef}
+                hoverCloseDelayMs={320}
+                boundaryRef={viewRef}
+                placement="bottom-end"
+              >
                  <div
                    className="flex flex-col gap-2 p-2"
                    onKeyDown={(event) => {
@@ -816,61 +1190,388 @@ export const TradingChart: React.FC<TradingChartProps> = ({
         <div className="flex items-center gap-2 md:gap-3">
           {/* Settings / Appearance Menu */}
           <div className="relative">
-              <button 
-                 onClick={() => toggleMenu('settings')}
-                 className={`flex items-center gap-2 px-3 md:px-4 py-2 border rounded-xl text-sm font-medium transition-all shadow-sm
-                    ${activeMenu === 'settings' ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'}`}
-              >
-                <Palette size={16} /> 
-                <span className="hidden md:inline">Style</span>
-              </button>
+            <button
+              ref={settingsTriggerRef}
+              onClick={() => toggleMenu('settings')}
+              className={`flex items-center gap-2 px-3 md:px-4 py-2 border rounded-xl text-sm font-medium transition-all shadow-sm
+                    ${
+                      activeMenu === 'settings'
+                        ? 'bg-sky-50 border-sky-200 text-sky-700'
+                        : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50'
+                    }`}
+            >
+              <Palette size={16} />
+              <span className="hidden md:inline">Style</span>
+            </button>
 
-              <Menu isOpen={activeMenu === 'settings'} onClose={() => setActiveMenu(null)} className="right-0 w-72">
-                  <div className="space-y-4 p-2">
-                      <div>
-                          <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Candle Colors</label>
-                          <div className="grid grid-cols-2 gap-4">
-                              <div className="space-y-2">
-                                  <span className="text-xs text-slate-500">Bullish</span>
-                                  <div className="flex gap-2">
-                                      {['#10b981', '#3b82f6', '#8b5cf6'].map(c => (
-                                          <button 
-                                            key={c} 
-                                            onClick={() => setConfig(prev => ({...prev, upColor: c}))}
-                                            className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${config.upColor === c ? 'border-slate-800 scale-110' : 'border-transparent'}`}
-                                            style={{ backgroundColor: c }}
-                                          />
-                                      ))}
-                                  </div>
+            <Menu
+              isOpen={activeMenu === 'settings'}
+              onClose={() => setActiveMenu(null)}
+              className="w-72"
+              anchorRef={settingsTriggerRef}
+              boundaryRef={viewRef}
+              placement="bottom-center"
+            >
+              <div className="space-y-4 p-2">
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">
+                    Candle Colors
+                  </label>
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Bullish */}
+                    <div className="space-y-2">
+                      <span className="text-xs text-slate-500">Bullish</span>
+                      <div className="space-y-1.5">
+                        {/* Body row */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-slate-500">Body</span>
+                          <div className="flex gap-2 items-center relative">
+                            {BULL_BODY_PRESETS.map((c) => (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={() =>
+                                  updateAppearance({
+                                    candleUp: {
+                                      ...effectiveAppearance.candleUp,
+                                      body: c,
+                                    },
+                                  })
+                                }
+                                className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${
+                                  effectiveAppearance.candleUp.body === c
+                                    ? 'border-slate-800 scale-110'
+                                    : 'border-transparent'
+                                }`}
+                                style={{ backgroundColor: c }}
+                              />
+                            ))}
+                            {/* Custom dot */}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOpenCustomPicker((prev) => (prev === 'bull-body' ? null : 'bull-body'))
+                              }
+                              className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${
+                                effectiveAppearance.candleUp.body ===
+                                resolveCustomColor(
+                                  BULL_BODY_PRESETS,
+                                  effectiveAppearance.candleUp.body,
+                                  effectiveAppearance.candleUp.customBody
+                                )
+                                  ? 'border-slate-800 scale-110'
+                                  : 'border-dashed border-slate-300'
+                              }`}
+                              style={{
+                                backgroundColor: resolveCustomColor(
+                                  BULL_BODY_PRESETS,
+                                  effectiveAppearance.candleUp.body,
+                                  effectiveAppearance.candleUp.customBody
+                                ),
+                              }}
+                              aria-label="Custom bullish body color"
+                            />
+                            {openCustomPicker === 'bull-body' && (
+                              <div className="absolute top-8 right-0 z-50 bg-white border border-slate-200 rounded-xl shadow-xl p-2 flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={resolveCustomColor(
+                                    BULL_BODY_PRESETS,
+                                    effectiveAppearance.candleUp.body,
+                                    effectiveAppearance.candleUp.customBody
+                                  )}
+                                  onChange={(event) => {
+                                    const next = event.target.value;
+                                    updateAppearance({
+                                      candleUp: {
+                                        ...effectiveAppearance.candleUp,
+                                        body: next,
+                                        customBody: next,
+                                      },
+                                    });
+                                    setOpenCustomPicker(null);
+                                  }}
+                                  className="w-8 h-8 rounded border border-slate-200 cursor-pointer"
+                                />
                               </div>
-                              <div className="space-y-2">
-                                  <span className="text-xs text-slate-500">Bearish</span>
-                                  <div className="flex gap-2">
-                                      {['#ef4444', '#f97316', '#64748b'].map(c => (
-                                          <button 
-                                            key={c} 
-                                            onClick={() => setConfig(prev => ({...prev, downColor: c}))}
-                                            className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${config.downColor === c ? 'border-slate-800 scale-110' : 'border-transparent'}`}
-                                            style={{ backgroundColor: c }}
-                                          />
-                                      ))}
-                                  </div>
-                              </div>
+                            )}
                           </div>
-                      </div>
+                        </div>
 
-                      <div className="border-t border-slate-100 pt-4">
-                           <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Display</label>
-                           <button 
-                                onClick={() => setConfig(prev => ({...prev, grid: !prev.grid}))}
-                                className="flex items-center justify-between w-full p-2 hover:bg-slate-50 rounded-lg text-sm text-slate-600"
-                           >
-                               <span>Show Grid Lines</span>
-                               {config.grid && <Check size={14} className="text-emerald-500" />}
-                           </button>
+                        {/* Wick & Outline row */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-slate-500">Wick & Outline</span>
+                          <div className="flex gap-2 items-center relative">
+                            {BULL_WICK_PRESETS.map((c) => (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={() =>
+                                  updateAppearance({
+                                    candleUp: {
+                                      ...effectiveAppearance.candleUp,
+                                      wick: c,
+                                      border: c,
+                                    },
+                                  })
+                                }
+                                className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${
+                                  effectiveAppearance.candleUp.wick === c &&
+                                  effectiveAppearance.candleUp.border === c
+                                    ? 'border-slate-800 scale-110'
+                                    : 'border-transparent'
+                                }`}
+                                style={{ backgroundColor: c }}
+                              />
+                            ))}
+                            {/* Custom dot */}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOpenCustomPicker((prev) => (prev === 'bull-wick' ? null : 'bull-wick'))
+                              }
+                              className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${
+                                effectiveAppearance.candleUp.wick ===
+                                  resolveCustomColor(
+                                    BULL_WICK_PRESETS,
+                                    effectiveAppearance.candleUp.wick,
+                                    effectiveAppearance.candleUp.customWickOutline
+                                  ) &&
+                                effectiveAppearance.candleUp.border ===
+                                  resolveCustomColor(
+                                    BULL_WICK_PRESETS,
+                                    effectiveAppearance.candleUp.wick,
+                                    effectiveAppearance.candleUp.customWickOutline
+                                  )
+                                  ? 'border-slate-800 scale-110'
+                                  : 'border-dashed border-slate-300'
+                              }`}
+                              style={{
+                                backgroundColor: resolveCustomColor(
+                                  BULL_WICK_PRESETS,
+                                  effectiveAppearance.candleUp.wick,
+                                  effectiveAppearance.candleUp.customWickOutline
+                                ),
+                              }}
+                              aria-label="Custom bullish wick & outline color"
+                            />
+                            {openCustomPicker === 'bull-wick' && (
+                              <div className="absolute top-8 right-0 z-50 bg-white border border-slate-200 rounded-xl shadow-xl p-2 flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={resolveCustomColor(
+                                    BULL_WICK_PRESETS,
+                                    effectiveAppearance.candleUp.wick,
+                                    effectiveAppearance.candleUp.customWickOutline
+                                  )}
+                                  onChange={(event) => {
+                                    const next = event.target.value;
+                                    updateAppearance({
+                                      candleUp: {
+                                        ...effectiveAppearance.candleUp,
+                                        wick: next,
+                                        border: next,
+                                        customWickOutline: next,
+                                      },
+                                    });
+                                    setOpenCustomPicker(null);
+                                  }}
+                                  className="w-8 h-8 rounded border border-slate-200 cursor-pointer"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
+                    </div>
+
+                    {/* Bearish */}
+                    <div className="space-y-2">
+                      <span className="text-xs text-slate-500">Bearish</span>
+                      <div className="space-y-1.5">
+                        {/* Body row */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-slate-500">Body</span>
+                          <div className="flex gap-2 items-center relative">
+                            {BEAR_BODY_PRESETS.map((c) => (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={() =>
+                                  updateAppearance({
+                                    candleDown: {
+                                      ...effectiveAppearance.candleDown,
+                                      body: c,
+                                    },
+                                  })
+                                }
+                                className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${
+                                  effectiveAppearance.candleDown.body === c
+                                    ? 'border-slate-800 scale-110'
+                                    : 'border-transparent'
+                                }`}
+                                style={{ backgroundColor: c }}
+                              />
+                            ))}
+                            {/* Custom dot */}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOpenCustomPicker((prev) => (prev === 'bear-body' ? null : 'bear-body'))
+                              }
+                              className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${
+                                effectiveAppearance.candleDown.body ===
+                                resolveCustomColor(
+                                  BEAR_BODY_PRESETS,
+                                  effectiveAppearance.candleDown.body,
+                                  effectiveAppearance.candleDown.customBody
+                                )
+                                  ? 'border-slate-800 scale-110'
+                                  : 'border-dashed border-slate-300'
+                              }`}
+                              style={{
+                                backgroundColor: resolveCustomColor(
+                                  BEAR_BODY_PRESETS,
+                                  effectiveAppearance.candleDown.body,
+                                  effectiveAppearance.candleDown.customBody
+                                ),
+                              }}
+                              aria-label="Custom bearish body color"
+                            />
+                            {openCustomPicker === 'bear-body' && (
+                              <div className="absolute top-8 right-0 z-50 bg-white border border-slate-200 rounded-xl shadow-xl p-2 flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={resolveCustomColor(
+                                    BEAR_BODY_PRESETS,
+                                    effectiveAppearance.candleDown.body,
+                                    effectiveAppearance.candleDown.customBody
+                                  )}
+                                  onChange={(event) => {
+                                    const next = event.target.value;
+                                    updateAppearance({
+                                      candleDown: {
+                                        ...effectiveAppearance.candleDown,
+                                        body: next,
+                                        customBody: next,
+                                      },
+                                    });
+                                    setOpenCustomPicker(null);
+                                  }}
+                                  className="w-8 h-8 rounded border border-slate-200 cursor-pointer"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Wick & Outline row */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-slate-500">Wick & Outline</span>
+                          <div className="flex gap-2 items-center relative">
+                            {BEAR_WICK_PRESETS.map((c) => (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={() =>
+                                  updateAppearance({
+                                    candleDown: {
+                                      ...effectiveAppearance.candleDown,
+                                      wick: c,
+                                      border: c,
+                                    },
+                                  })
+                                }
+                                className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${
+                                  effectiveAppearance.candleDown.wick === c &&
+                                  effectiveAppearance.candleDown.border === c
+                                    ? 'border-slate-800 scale-110'
+                                    : 'border-transparent'
+                                }`}
+                                style={{ backgroundColor: c }}
+                              />
+                            ))}
+                            {/* Custom dot */}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOpenCustomPicker((prev) => (prev === 'bear-wick' ? null : 'bear-wick'))
+                              }
+                              className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${
+                                effectiveAppearance.candleDown.wick ===
+                                  resolveCustomColor(
+                                    BEAR_WICK_PRESETS,
+                                    effectiveAppearance.candleDown.wick,
+                                    effectiveAppearance.candleDown.customWickOutline
+                                  ) &&
+                                effectiveAppearance.candleDown.border ===
+                                  resolveCustomColor(
+                                    BEAR_WICK_PRESETS,
+                                    effectiveAppearance.candleDown.wick,
+                                    effectiveAppearance.candleDown.customWickOutline
+                                  )
+                                  ? 'border-slate-800 scale-110'
+                                  : 'border-dashed border-slate-300'
+                              }`}
+                              style={{
+                                backgroundColor: resolveCustomColor(
+                                  BEAR_WICK_PRESETS,
+                                  effectiveAppearance.candleDown.wick,
+                                  effectiveAppearance.candleDown.customWickOutline
+                                ),
+                              }}
+                              aria-label="Custom bearish wick & outline color"
+                            />
+                            {openCustomPicker === 'bear-wick' && (
+                              <div className="absolute top-8 right-0 z-50 bg-white border border-slate-200 rounded-xl shadow-xl p-2 flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={resolveCustomColor(
+                                    BEAR_WICK_PRESETS,
+                                    effectiveAppearance.candleDown.wick,
+                                    effectiveAppearance.candleDown.customWickOutline
+                                  )}
+                                  onChange={(event) => {
+                                    const next = event.target.value;
+                                    updateAppearance({
+                                      candleDown: {
+                                        ...effectiveAppearance.candleDown,
+                                        wick: next,
+                                        border: next,
+                                        customWickOutline: next,
+                                      },
+                                    });
+                                    setOpenCustomPicker(null);
+                                  }}
+                                  className="w-8 h-8 rounded border border-slate-200 cursor-pointer"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-              </Menu>
+                </div>
+
+                <div className="border-t border-slate-100 pt-4">
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">
+                    Display
+                  </label>
+                  <button
+                    onClick={() =>
+                      updateAppearance({
+                        gridEnabled: !effectiveAppearance.gridEnabled,
+                      })
+                    }
+                    className="flex items-center justify-between w-full p-2 hover:bg-slate-50 rounded-lg text-sm text-slate-600"
+                  >
+                    <span>Show Grid Lines</span>
+                    {effectiveAppearance.gridEnabled && <Check size={14} className="text-emerald-500" />}
+                  </button>
+                </div>
+              </div>
+            </Menu>
           </div>
 
           <button
@@ -895,15 +1596,8 @@ export const TradingChart: React.FC<TradingChartProps> = ({
         
         {/* Floating Legend + Indicator Menu */}
         <div className="absolute top-6 left-6 bg-white/80 backdrop-blur-md p-3 rounded-xl border border-slate-100 shadow-sm text-xs z-20 animate-in fade-in slide-in-from-top-2 duration-700">
-          <div className="flex items-center gap-2 mb-1.5">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: config.upColor }}></div>
-            <span className="font-bold text-slate-700">
-              {(activeSymbol || 'CL1!') + ' - Crude Oil Futures'}
-            </span>
-            <span className="text-slate-400">NYMEX</span>
-          </div>
           {Array.isArray(indicators) && indicators.length > 0 && (
-            <div className="mt-2 space-y-1">
+            <div className="space-y-1">
               {indicators
                 .filter((indicator) => indicator.isActive)
                 .sort((a, b) => {

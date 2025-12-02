@@ -14,6 +14,60 @@ export interface IndicatorSeriesPoint {
   value: number;
 }
 
+export type IndicatorPlotType = 'line' | 'histogram' | 'area' | 'hline' | 'zone' | 'marker' | 'label';
+
+export interface IndicatorPlotStyle {
+  color?: string;
+  width?: number;
+  dashed?: boolean;
+  opacity?: number;
+  shape?: 'circle' | 'arrowUp' | 'arrowDown' | 'square' | 'diamond';
+  zIndex?: number;
+}
+
+export interface IndicatorPlot {
+  /**
+   * Stable identifier for the plot inside a single indicator.
+   * Example: "main", "signal", "protected-levels".
+   */
+  id: string;
+  /**
+   * Plot primitive type. Kept intentionally small and generic so
+   * the chart engine does not need indicator-specific knowledge.
+   */
+  type: IndicatorPlotType;
+  /**
+   * Logical tag coming from the indicator implementation.
+   * Example: "protected-high", "bos-bearish", "mss-bullish".
+   * The chart treats this as an opaque label for styling / legends.
+   */
+  kind?: string;
+  /**
+   * Pane where the plot should be rendered.
+   * "price" is the default price pane; other values create
+   * additional panes (e.g. "rsi", "volume").
+   */
+  paneId?: string;
+  /**
+   * Optional scale identifier, used to group multiple series
+   * on the same price scale inside a pane.
+   */
+  scaleId?: string;
+  style?: IndicatorPlotStyle;
+  /**
+   * Data points for the plot. The exact shape depends on `type`:
+   * - line/area/histogram: { time, value }[]
+   * - marker/label: { time, value?, text? }[]
+   * - hline/zone: { timeStart, timeEnd, price }[]
+   */
+  data: any[];
+  /**
+   * Optional arbitrary metadata, forwarded from the indicator.
+   * Useful for debug UIs or future extensions.
+   */
+  meta?: Record<string, unknown>;
+}
+
 export interface IndicatorMarker {
   time: string | number;
   value?: number;
@@ -31,6 +85,12 @@ export interface IndicatorOverlay {
   series: Record<string, IndicatorSeriesPoint[]>;
   markers: IndicatorMarker[];
   levels: IndicatorLevel[];
+  /**
+   * Generic Plot API v1. When present, this is the preferred
+   * representation for rendering the indicator on the chart.
+   * Legacy series/markers/levels are kept for compatibility.
+   */
+  plots?: IndicatorPlot[];
 }
 
 export type StrategyLabErrorSource = 'indicator' | 'strategy' | 'lean' | 'system';
@@ -126,11 +186,31 @@ export interface ChartAppearance {
     body: string;
     border: string;
     wick: string;
+    /**
+     * Last custom color chosen for the bullish candle body.
+     * Used to render the "custom" color dot and restore state.
+     */
+    customBody?: string;
+    /**
+     * Last custom color chosen for the bullish candle wick & outline.
+     * Used to render the "custom" color dot and restore state.
+     */
+    customWickOutline?: string;
   };
   candleDown: {
     body: string;
     border: string;
     wick: string;
+    /**
+     * Last custom color chosen for the bearish candle body.
+     * Used to render the "custom" color dot and restore state.
+     */
+    customBody?: string;
+    /**
+     * Last custom color chosen for the bearish candle wick & outline.
+     * Used to render the "custom" color dot and restore state.
+     */
+    customWickOutline?: string;
   };
   usePrevCloseColoring: boolean;
   scaleTextColor: string;

@@ -178,6 +178,15 @@ Visao consolidada (LLM-friendly) do frontend, backend, fluxo de dados, Lean e sh
   - `components/panels/SyncLogConsole.tsx`,
   - `StatsCard.tsx`, `DatePickerInput.tsx`.
 
+### Infra de estrategia legado
+
+- Componentes legados (mantidos apenas como referencia e para possivel reaproveitamento futuro):
+  - `components/legacy/strategy/StrategyWorkspacePanel.tsx`
+  - `components/legacy/strategy/StrategyEditorPanel.tsx`
+  - `components/legacy/strategy/LeanEnginePanel.tsx`
+- Estes paineis nao sao usados pelo shell Lumina atual, que utiliza `lumina-edition/components/StrategyEditor.tsx` via `features/strategy-lab/LuminaStrategyEditorView.tsx`.
+
+
 ---
 
 ## Backend
@@ -211,6 +220,7 @@ Visao consolidada (LLM-friendly) do frontend, backend, fluxo de dados, Lean e sh
     - converter para candles (M1/M5/etc),
     - persistir JSONs segmentados em `server/data/`.
   - Job store em `server/src/services/dukascopy/jobStore.js` (tracking de progresso, persistencia em disco).
+  - Arquivos `*.bak_from_m3d_*` em `server/src/**` sao snapshots legados mantidos apenas como referencia historica e nao sao usados pelo fluxo atual.
 
 - Indicadores (`/api/indicators` e `/api/indicator-exec`):
   - Arquivos Python em `indicators/` (workspace) e `server/indicators/` (runner/backend).
@@ -218,8 +228,9 @@ Visao consolidada (LLM-friendly) do frontend, backend, fluxo de dados, Lean e sh
     - lista indicadores, le/escreve arquivo, renomeia, remove.
   - `server/src/services/indicatorExecutionService.js`:
     - executa indicador via `indicator_runner/runner.py` (processo Python separado),
-    - alinha valores, markers e levels com candles (`alignSeriesWithCandles`, `alignMarkerWithCandles`, `alignLevelWithCandles`),
-    - retorna overlays prontos para o frontend (`IndicatorOverlay`).
+    - alinha valores, markers e levels com candles (helpers em `indicatorOverlayAlign.js`),
+    - adapta a saida legada (`series`/`markers`/`levels`) e a Plot API v1 (`plots`) para o contrato `IndicatorOverlay` via `indicatorOverlayAdapter.js`,
+    - retorna overlays prontos para o frontend (`IndicatorOverlay`), incluindo o campo `plots` quando disponivel.
 
 - Estrategias (`/api/strategies`):
   - `server/src/services/strategyFileService.js`:
@@ -307,7 +318,7 @@ Visao consolidada (LLM-friendly) do frontend, backend, fluxo de dados, Lean e sh
   - `architecture.md`, `ROADMAP.md`, `AGENTS.md`, `metadata.json`,
   - `docs/indicators/indicator-api.md`.
 - Lumina edition:
-  - `lumina-edition/` (mini-app de referencia com `components/` como Dashboard, TradingChart, StrategyEditor, Documentation, Repositories; usado como “design system” local).
+  - `lumina-edition/components/` (biblioteca de componentes Lumina como Dashboard, TradingChart, StrategyEditor, Documentation, Repositories; usada pelo frontend principal como "design system" local).
 
 ---
 

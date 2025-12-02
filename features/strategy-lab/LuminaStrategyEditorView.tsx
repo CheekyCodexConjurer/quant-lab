@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { StrategyEditor, FileNode } from '../../lumina-edition/components/StrategyEditor';
-import { CustomIndicator, StrategyFile } from '../../types';
+import { CustomIndicator, StrategyFile, StrategyLabError } from '../../types';
 
 interface StrategiesAdapter {
   strategies: StrategyFile[];
@@ -29,21 +29,47 @@ interface IndicatorsAdapter {
   ) => Promise<void> | void;
   renameIndicator: (id: string, nextWorkspacePath: string, name: string) => Promise<void> | void;
   toggleActiveIndicator: (id: string) => Promise<void> | void;
+  setIndicatorActive?: (id: string, active: boolean) => Promise<void> | void;
+  refreshFromDisk?: (id: string) => Promise<void> | void;
 }
 
 export interface LuminaStrategyEditorViewProps {
   strategiesAdapter: StrategiesAdapter;
   indicatorsAdapter?: IndicatorsAdapter;
   onRunLean?: (code: string) => void;
+  leanStatus?: 'idle' | 'queued' | 'running' | 'completed' | 'error';
+  leanLogs?: string[];
+  leanErrorMeta?: StrategyLabError | null;
+  onWorkspaceDirtyChange?: (dirty: boolean) => void;
 }
 
 const STRATEGIES_ROOT_ID = 'strategies-root';
 const INDICATORS_ROOT_ID = 'indicators-root';
 
+const normalizeFsPath = (value?: string | null) =>
+  String(value || '').replace(/\\/g, '/');
+
+const getRelativePath = (fullPath: string, rootToken: string) => {
+  const normalized = normalizeFsPath(fullPath);
+  const lower = normalized.toLowerCase();
+  const token = `${rootToken.toLowerCase()}/`;
+  const idx = lower.lastIndexOf(token);
+  if (idx >= 0) {
+    return normalized.slice(idx + token.length);
+  }
+  // Fallback: use only last segment
+  const parts = normalized.split('/');
+  return parts[parts.length - 1] || normalized;
+};
+
 export const LuminaStrategyEditorView: React.FC<LuminaStrategyEditorViewProps> = ({
   strategiesAdapter,
   indicatorsAdapter,
   onRunLean,
+  leanStatus,
+  leanLogs,
+  leanErrorMeta,
+  onWorkspaceDirtyChange,
 }) => {
   const {
     strategies,
@@ -59,6 +85,41 @@ export const LuminaStrategyEditorView: React.FC<LuminaStrategyEditorViewProps> =
 
   const [codeDraft, setCodeDraft] = useState<string>('');
   const [activeKind, setActiveKind] = useState<'strategy' | 'indicator'>('strategy');
+  const [editorErrorLines, setEditorErrorLines] = useState<number[]>([]);
+  const [mergedLogs, setMergedLogs] = useState<
+    { type: 'info' | 'success' | 'error'; text: string }[]
+  >([]);
+
+  useEffect(() => {
+    const next: { type: 'info' | 'success' | 'error'; text: string }[] = [];
+    if (leanLogs && leanLogs.length) {
+      leanLogs.forEach((line) => {
+        next.push({ type: 'info', text: line });
+      });
+    }
+    if (leanErrorMeta) {
+      next.push({
+        type: 'error',
+        text: `[LeanError] ${leanErrorMeta.message}`,
+      });
+      if (typeof leanErrorMeta.line === 'number') {
+        setEditorErrorLines([leanErrorMeta.line]);
+      }
+    } else {
+      setEditorErrorLines([]);
+    }
+
+    if (!next.length) {
+      setMergedLogs([
+        {
+          type: 'info',
+          text: '> Console attached to Lean backtest. Run a job to see output.',
+        },
+      ]);
+    } else {
+      setMergedLogs(next);
+    }
+  }, [leanLogs, leanErrorMeta]);
 
   useEffect(() => {
     if (activeKind === 'strategy' && activeStrategy) {
@@ -78,32 +139,104 @@ export const LuminaStrategyEditorView: React.FC<LuminaStrategyEditorViewProps> =
     indicatorsAdapter?.activeIndicator?.code,
   ]);
 
+  useEffect(() => {
+    if (!onWorkspaceDirtyChange) return;
+    const strategyDirty =
+      activeKind === 'strategy' && !!activeStrategy && (codeDraft || '') !== (activeStrategy.code || '');
+    const indicatorDirty =
+      activeKind === 'indicator' &&
+      !!indicatorsAdapter?.activeIndicator &&
+      (codeDraft || '') !== (indicatorsAdapter.activeIndicator.code || '');
+    const dirty = strategyDirty || indicatorDirty;
+    onWorkspaceDirtyChange(dirty);
+    return () => {
+      onWorkspaceDirtyChange(false);
+    };
+  }, [activeKind, activeStrategy, indicatorsAdapter?.activeIndicator, codeDraft, onWorkspaceDirtyChange]);
+
+  const activeFileId: string | null = useMemo(() => {
+    if (activeKind === 'indicator' && indicatorsAdapter) {
+      return indicatorsAdapter.selectedIndicatorId;
+    }
+    return selectedId;
+  }, [activeKind, selectedId, indicatorsAdapter?.selectedIndicatorId]);
+
+  const activeIndicatorLastUpdateAt =
+    indicatorsAdapter?.activeIndicator?.appliedVersion ||
+    indicatorsAdapter?.activeIndicator?.lastModified ||
+    null;
+
   const files: FileNode[] = useMemo(() => {
     const nodes: FileNode[] = [
       { id: STRATEGIES_ROOT_ID, name: 'strategies', type: 'folder' },
     ];
+    const folderIndex = new Map<string, string>();
 
+    const ensureFolder = (rootId: string, rootName: string, segments: string[]): string => {
+      let parentId = rootId;
+      let accumulated = '';
+
+      segments.forEach((segment) => {
+        accumulated = accumulated ? `${accumulated}/${segment}` : segment;
+        const folderKey = `${rootName}/${accumulated}`;
+        if (!folderIndex.has(folderKey)) {
+          const id = `${rootId}:${accumulated}`;
+          folderIndex.set(folderKey, id);
+          nodes.push({
+            id,
+            name: segment,
+            type: 'folder',
+            parentId,
+          });
+        }
+        parentId = folderIndex.get(folderKey)!;
+      });
+
+      return parentId;
+    };
+
+    // Strategies tree
     strategies.forEach((strategy) => {
-      const fileName = (strategy.filePath || '').split('/').pop() || strategy.name || strategy.id;
+      const relative = getRelativePath(strategy.filePath || '', 'strategies');
+      const segments = relative.split('/').filter(Boolean);
+      const folderSegments = segments.slice(0, -1);
+      const fileName = segments[segments.length - 1] || strategy.name || strategy.id;
+      const parentId =
+        folderSegments.length > 0
+          ? ensureFolder(STRATEGIES_ROOT_ID, 'strategies', folderSegments)
+          : STRATEGIES_ROOT_ID;
+
       nodes.push({
         id: strategy.id,
         name: fileName,
         type: 'file',
-        parentId: STRATEGIES_ROOT_ID,
+        parentId,
         active: activeKind === 'strategy' && strategy.id === selectedId,
       });
     });
 
+    // Indicators tree
     if (indicatorsAdapter) {
       nodes.push({ id: INDICATORS_ROOT_ID, name: 'indicators', type: 'folder' });
+
       indicatorsAdapter.indicators.forEach((indicator) => {
-        const fileName = (indicator.filePath || '').split('/').pop() || indicator.name || indicator.id;
+        const relative = getRelativePath(indicator.filePath || '', 'indicators');
+        const segments = relative.split('/').filter(Boolean);
+        const folderSegments = segments.slice(0, -1);
+        const fileName = segments[segments.length - 1] || indicator.name || indicator.id;
+        const parentId =
+          folderSegments.length > 0
+            ? ensureFolder(INDICATORS_ROOT_ID, 'indicators', folderSegments)
+            : INDICATORS_ROOT_ID;
+
         nodes.push({
           id: indicator.id,
           name: fileName,
           type: 'file',
-          parentId: INDICATORS_ROOT_ID,
-          active: activeKind === 'indicator' && indicator.id === indicatorsAdapter.selectedIndicatorId,
+          parentId,
+          active:
+            activeKind === 'indicator' &&
+            indicator.id === indicatorsAdapter.selectedIndicatorId,
           indicatorActive: indicator.isActive,
         });
       });
@@ -146,6 +279,7 @@ export const LuminaStrategyEditorView: React.FC<LuminaStrategyEditorViewProps> =
   const handleRun = () => {
     if (activeKind !== 'strategy' || !onRunLean) return;
     if (!activeStrategy) return;
+    if (leanStatus === 'running' || leanStatus === 'queued') return;
     if (onRunLean) {
       void handleSave().then(() => {
         onRunLean(codeDraft);
@@ -191,15 +325,19 @@ export const LuminaStrategyEditorView: React.FC<LuminaStrategyEditorViewProps> =
     await createStrategy('strategies');
   };
 
-  const handleToggleIndicatorActive = async (id: string, _nextActive: boolean) => {
+  const handleToggleIndicatorActive = async (id: string, nextActive: boolean) => {
     if (!indicatorsAdapter) return;
+    if (indicatorsAdapter.setIndicatorActive) {
+      await indicatorsAdapter.setIndicatorActive(id, nextActive);
+      return;
+    }
     await indicatorsAdapter.toggleActiveIndicator(id);
   };
 
   return (
     <StrategyEditor
       files={files}
-      activeFileId={selectedId}
+      activeFileId={activeFileId}
       code={codeDraft}
       onSelectFile={handleSelectFile}
       onChangeCode={setCodeDraft}
@@ -209,6 +347,22 @@ export const LuminaStrategyEditorView: React.FC<LuminaStrategyEditorViewProps> =
       onDeleteFile={handleDeleteFile}
       onToggleIndicatorActive={handleToggleIndicatorActive}
       onCreateFile={handleCreateFile}
+      onCreateIndicatorFile={
+        indicatorsAdapter
+          ? () => {
+              indicatorsAdapter.createIndicator('indicators');
+            }
+          : undefined
+      }
+      onImportFromFile={(fileName, content) => {
+        const baseName = fileName.replace(/\.[^.]+$/, '') || 'imported_strategy';
+        const filePath = `strategies/${baseName}.py`;
+        void importStrategy(filePath, content);
+      }}
+      errorLines={editorErrorLines}
+      externalLogs={mergedLogs}
+      isRunBusy={leanStatus === 'running' || leanStatus === 'queued'}
+      activeIndicatorLastUpdateAt={activeIndicatorLastUpdateAt}
     />
   );
 };

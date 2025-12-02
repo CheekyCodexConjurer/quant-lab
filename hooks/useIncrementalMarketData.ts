@@ -94,10 +94,12 @@ const ensureWindow = async (
 export const prefetchMarketWindow = async (
   asset: string,
   timeframe: string,
-  limit = MAX_CANDLES
+  limit?: number
 ) => {
+  const effectiveLimit =
+    typeof limit === 'number' && limit > 0 ? limit : getInitialLimitFor(timeframe);
   try {
-    await ensureWindow(asset, timeframe, limit);
+    await ensureWindow(asset, timeframe, effectiveLimit);
   } catch {
     // Prefetch em background: erros podem ser ignorados aqui.
   }
