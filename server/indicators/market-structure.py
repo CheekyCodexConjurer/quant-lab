@@ -46,9 +46,12 @@ def calculate(inputs, settings=None):
     elif visibility_mode == "markers-only":
       levels = []
 
-    print(f"DEBUG: Found {len(markers)} markers")
     return {
         "series": filtered_series,
         "markers": markers,
         "levels": levels,
+        "debug_info": {
+            "markers_count": len(markers),
+            "first_marker": markers[0] if markers else None
+        }
     }
